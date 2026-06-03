@@ -1,0 +1,26 @@
+# secrets
+.env
+
+# python
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+
+# linter / tool caches
+.ruff_cache/
+.mypy_cache/
+
+# runtime logs & crash dumps
+*.log
+*.stackdump
+
+# claude code local settings
+.claude/

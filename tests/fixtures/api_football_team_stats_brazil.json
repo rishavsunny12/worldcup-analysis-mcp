@@ -1,0 +1,19 @@
+{
+  "response": {
+    "team": {"id": 6, "name": "Brazil"},
+    "fixtures": {
+      "played": {"total": 3},
+      "wins": {"total": 3},
+      "draws": {"total": 0},
+      "loses": {"total": 0}
+    },
+    "goals": {
+      "for": {"total": {"total": 8}, "average": {"total": "2.7"}},
+      "against": {"total": {"total": 3}, "average": {"total": "1.0"}}
+    },
+    "expected_goals": {"for": "7.5", "against": "2.1"},
+    "shots": {"total": {"total": 45}, "on": {"total": 22}},
+    "clean_sheet": {"total": 1},
+    "ball_possession": "62"
+  }
+}

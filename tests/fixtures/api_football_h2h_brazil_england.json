@@ -1,0 +1,22 @@
+{
+  "response": [
+    {
+      "fixture": {"id": 1001, "date": "2022-06-18T20:00:00+00:00"},
+      "league": {"name": "FIFA World Cup", "round": "Group Stage"},
+      "teams": {
+        "home": {"id": 6, "name": "Brazil", "winner": true},
+        "away": {"id": 10, "name": "England", "winner": false}
+      },
+      "goals": {"home": 2, "away": 0}
+    },
+    {
+      "fixture": {"id": 1002, "date": "2019-11-14T21:00:00+00:00"},
+      "league": {"name": "International Friendly", "round": "Friendly"},
+      "teams": {
+        "home": {"id": 10, "name": "England", "winner": false},
+        "away": {"id": 6, "name": "Brazil", "winner": false}
+      },
+      "goals": {"home": 0, "away": 0}
+    }
+  ]
+}
