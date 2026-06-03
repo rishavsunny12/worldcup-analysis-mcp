@@ -1,5 +1,10 @@
+import asyncio
+import json
+import logging
+import os
 import secrets
 import time
+from pathlib import Path
 from typing import Optional
 
 from mcp.server.auth.provider import AuthorizationCode, AuthorizationParams
@@ -11,26 +16,92 @@ from starlette.routing import Route
 from fastmcp.server.auth import AccessToken, OAuthProvider
 from fastmcp.server.auth.auth import ClientRegistrationOptions
 
+logger = logging.getLogger(__name__)
+
+TOKEN_TTL = 30 * 24 * 3600  # 30 days
+
+
+def _default_state_file() -> Path:
+    """Prefer /data (Railway persistent volume mount point) if it exists."""
+    data_dir = Path("/data")
+    if data_dir.exists() and os.access(data_dir, os.W_OK):
+        return data_dir / "oauth_state.json"
+    return Path("oauth_state.json")
+
 
 class SimpleOAuthProvider(OAuthProvider):
     """
-    Minimal in-memory OAuth 2.0 provider for self-hosted MCP.
+    Minimal OAuth 2.0 provider for self-hosted MCP.
     Shows a one-click approval page — no username/password required.
-    Tokens expire after 24 hours.
+    Tokens expire after 30 days. State is persisted to disk so tokens
+    survive process restarts (and Railway redeployments when /data is mounted).
     """
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, state_file: Path | None = None):
         super().__init__(
             base_url=base_url,
             client_registration_options=ClientRegistrationOptions(enabled=True),
         )
+        self._state_file = state_file or _default_state_file()
+        self._lock = asyncio.Lock()
         self._clients: dict[str, OAuthClientInformationFull] = {}
         self._codes: dict[str, AuthorizationCode] = {}
         self._tokens: dict[str, AccessToken] = {}
-        self._pending: dict[str, dict] = {}  # session_id → auth request data
+        self._pending: dict[str, dict] = {}
+        self._load_state()
+
+    # ── persistence ──────────────────────────────────────────────────────────
+
+    def _load_state(self) -> None:
+        if not self._state_file.exists():
+            return
+        try:
+            raw = json.loads(self._state_file.read_text())
+            now = time.time()
+
+            for cid, c in raw.get("clients", {}).items():
+                try:
+                    self._clients[cid] = OAuthClientInformationFull(**c)
+                except Exception:
+                    pass
+
+            for tok, t in raw.get("tokens", {}).items():
+                if t.get("expires_at", 0) > now:
+                    self._tokens[tok] = AccessToken(**t)
+
+            logger.info(
+                f"OAuth state loaded from {self._state_file} "
+                f"({len(self._clients)} clients, {len(self._tokens)} tokens)"
+            )
+        except Exception as exc:
+            logger.warning(f"Could not load OAuth state from {self._state_file}: {exc}")
+
+    def _save_state(self) -> None:
+        try:
+            payload = {
+                "clients": {
+                    cid: c.model_dump(mode="json") for cid, c in self._clients.items()
+                },
+                "tokens": {
+                    tok: {
+                        "token": t.token,
+                        "client_id": t.client_id,
+                        "scopes": list(t.scopes or []),
+                        "expires_at": t.expires_at,
+                    }
+                    for tok, t in self._tokens.items()
+                },
+            }
+            self._state_file.write_text(json.dumps(payload, indent=2))
+        except Exception as exc:
+            logger.warning(f"Could not persist OAuth state to {self._state_file}: {exc}")
+
+    # ── OAuthProvider interface ───────────────────────────────────────────────
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
-        self._clients[client_info.client_id] = client_info
+        async with self._lock:
+            self._clients[client_info.client_id] = client_info
+            self._save_state()
 
     async def get_client(self, client_id: str) -> Optional[OAuthClientInformationFull]:
         return self._clients.get(client_id)
@@ -60,20 +131,25 @@ class SimpleOAuthProvider(OAuthProvider):
         if code_str not in self._codes:
             raise ValueError("Invalid or expired authorization code")
 
-        del self._codes[code_str]
-        token_str = secrets.token_hex(32)
-        self._tokens[token_str] = AccessToken(
-            token=token_str,
-            client_id=client.client_id,
-            scopes=authorization_code.scopes,
-            expires_at=int(time.time()) + 86400,
-        )
-        return OAuthToken(access_token=token_str, token_type="bearer", expires_in=86400)
+        async with self._lock:
+            del self._codes[code_str]
+            token_str = secrets.token_hex(32)
+            self._tokens[token_str] = AccessToken(
+                token=token_str,
+                client_id=client.client_id,
+                scopes=authorization_code.scopes,
+                expires_at=int(time.time()) + TOKEN_TTL,
+            )
+            self._save_state()
+
+        return OAuthToken(access_token=token_str, token_type="bearer", expires_in=TOKEN_TTL)
 
     async def load_access_token(self, token: str) -> Optional[AccessToken]:
         at = self._tokens.get(token)
         if at and at.expires_at and at.expires_at < time.time():
-            del self._tokens[token]
+            async with self._lock:
+                self._tokens.pop(token, None)
+                self._save_state()
             return None
         return at
 
@@ -81,18 +157,20 @@ class SimpleOAuthProvider(OAuthProvider):
         return await self.load_access_token(token)
 
     async def load_refresh_token(self, client, refresh_token: str):
-        return None  # refresh tokens not supported
+        return None
 
     async def exchange_refresh_token(self, client, refresh_token, scopes):
         raise NotImplementedError("Refresh tokens not supported")
 
     async def revoke_token(self, token: str, token_type_hint: str | None = None) -> None:
-        self._tokens.pop(token, None)
+        async with self._lock:
+            self._tokens.pop(token, None)
+            self._save_state()
 
     def get_routes(self, mcp_path: str | None = None) -> list[Route]:
         base_routes = super().get_routes(mcp_path)
 
-        provider = self  # capture for closures
+        provider = self
 
         async def approval_page(request: Request):
             session_id = request.query_params.get("session", "")

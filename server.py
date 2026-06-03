@@ -96,9 +96,19 @@ if __name__ == "__main__":
         mcp.run(transport="streamable-http", host="0.0.0.0", port=port)
     elif "--sse" in sys.argv:
         from auth.oauth_provider import SimpleOAuthProvider
-        oauth = SimpleOAuthProvider(base_url=settings.BASE_URL)
+        railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
+        base_url = (
+            settings.BASE_URL
+            or (f"https://{railway_domain}" if railway_domain else "")
+        )
+        if not base_url:
+            raise RuntimeError(
+                "BASE_URL is not set. Set BASE_URL or deploy on Railway "
+                "(RAILWAY_PUBLIC_DOMAIN is set automatically)."
+            )
+        logger.info(f"Starting HTTP+OAuth server on {base_url}/mcp")
+        oauth = SimpleOAuthProvider(base_url=base_url)
         mcp_http = _build_mcp(auth=oauth)
-        logger.info(f"Starting HTTP+OAuth server on {settings.BASE_URL}/mcp")
         mcp_http.run(transport="streamable-http", host="0.0.0.0", port=port)
     else:
         mcp.run()
