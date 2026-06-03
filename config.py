@@ -16,7 +16,7 @@ class Settings:
     CACHE_TTL_STANDINGS: int = int(os.getenv("CACHE_TTL_STANDINGS", 300))
     CACHE_TTL_H2H: int = int(os.getenv("CACHE_TTL_H2H", 3600))
     CACHE_TTL_SCORERS: int = int(os.getenv("CACHE_TTL_SCORERS", 300))
-    BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000")
+    BASE_URL: str = os.getenv("BASE_URL", "")
 
 
 settings = Settings()

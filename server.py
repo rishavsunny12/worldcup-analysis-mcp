@@ -88,16 +88,16 @@ mcp = _build_mcp()
 logger.info(f"worldcup-analysis-mcp started | {len(TOOLS)} tools | tier={settings.TIER}")
 
 if __name__ == "__main__":
+    import os
     import sys
+    port = int(os.getenv("PORT", 8000))
     if "--http" in sys.argv:
-        port = 8000
         logger.info(f"Starting HTTP server (no auth) on http://0.0.0.0:{port}/mcp")
         mcp.run(transport="streamable-http", host="0.0.0.0", port=port)
     elif "--sse" in sys.argv:
         from auth.oauth_provider import SimpleOAuthProvider
         oauth = SimpleOAuthProvider(base_url=settings.BASE_URL)
         mcp_http = _build_mcp(auth=oauth)
-        port = 8000
         logger.info(f"Starting HTTP+OAuth server on {settings.BASE_URL}/mcp")
         mcp_http.run(transport="streamable-http", host="0.0.0.0", port=port)
     else:
