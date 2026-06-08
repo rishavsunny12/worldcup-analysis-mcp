@@ -137,13 +137,49 @@ async def get_team_fixtures(team: str) -> str:
     Shows all group stage matches with dates, opponents, kick-off times, and results where available.
     """
     from config import resolve_team_id
+    from data.loader import get_bzzoiro_fixtures
+
     team_id = resolve_team_id(team)
     if team_id is None:
         return f"Team '{team}' not found. Try full name (e.g. 'South Korea', 'United States')."
 
-    cached = cache.get("fixtures", team_id=team_id)
+    cached = cache.get("fixtures", team_id=team_id, source="fixtures_v2")
     if cached:
         return cached
+
+    bzz_rows = get_bzzoiro_fixtures(team)
+    if bzz_rows:
+        team_display = team.title()
+        parsed: list[tuple[str, str, str, str, str]] = []
+        for row in bzz_rows:
+            utc = row.get("event_date") or ""
+            date_str = utc[5:10].replace("-", " ").strip() if len(utc) >= 10 else "?"
+            month_map = {"06": "Jun", "07": "Jul"}
+            parts = date_str.split(" ")
+            if len(parts) == 2:
+                date_str = f"{month_map.get(parts[0], parts[0])} {parts[1]}"
+            time_str = utc[11:16] if len(utc) >= 16 else "TBD"
+            home = row.get("home_team", "?")
+            away = row.get("away_team", "?")
+            status = (row.get("status") or "").upper()
+            sh, sa = row.get("home_score"), row.get("away_score")
+            if status in {"FT", "FINISHED", "AET", "PEN"} and sh not in ("", None):
+                result_str = f"FT {sh}–{sa}"
+            elif status in {"LIVE", "1H", "2H", "HT", "IN_PLAY"}:
+                result_str = "LIVE"
+            else:
+                result_str = "UPCOMING"
+            matchup = f"{home} vs {away}"
+            parsed.append((utc, date_str, time_str, matchup, result_str))
+
+        parsed.sort(key=lambda x: x[0])
+        lines = [f"📅 WORLD CUP 2026 FIXTURES — {team_display.upper()}\n", "  Group Stage (bzzoiro)"]
+        for _, date_str, time_str, matchup, result_str in parsed:
+            lines.append(f"  {date_str} | {matchup:<35} | {time_str} UTC | {result_str}")
+        lines.append(f"\n  {len(parsed)} group stage match(es) scheduled")
+        result = "\n".join(lines)
+        cache.set("fixtures", result, team_id=team_id, source="fixtures_v2")
+        return result
 
     try:
         raw = await football_data.get_matches(date_from="2026-06-11", date_to="2026-07-20")
@@ -193,5 +229,5 @@ async def get_team_fixtures(team: str) -> str:
     lines.append(f"\n  {len(matches)} group stage match(es) scheduled")
 
     result = "\n".join(lines)
-    cache.set("fixtures", result, team_id=team_id)
+    cache.set("fixtures", result, team_id=team_id, source="fixtures_v2")
     return result

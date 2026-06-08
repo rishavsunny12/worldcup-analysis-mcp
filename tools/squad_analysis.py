@@ -5,8 +5,9 @@ from cache.cache_manager import cache
 from config import resolve_team_id
 from data.loader import (
     ALL_PLAYERS, BZZ_ALL_PLAYERS, BZZ_LEAGUE_MAP, LEAGUE_FILES,
-    find_bzzoiro_player, find_player, get_adj_xg, get_bzzoiro_squad,
-    get_league_quality, normalize_bzz_player, quality_label,
+    defensive_profile_from_squad, find_bzzoiro_player, find_player, get_adj_xg,
+    get_bzzoiro_squad, get_league_quality, normalize_bzz_player, parse_attr_defending,
+    parse_int_field, quality_label,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,69 @@ def _safe_float(val) -> float:
 def _bar(pct: float, width: int = 10) -> str:
     filled = round(pct / 100 * width)
     return "█" * filled + "░" * (width - filled)
+
+
+def _defensive_lines_for_bzz(row: dict) -> list[str]:
+    """Format bzzoiro attribute block when defending data is present."""
+    defending = parse_attr_defending(row)
+    if defending is None:
+        return []
+    overall = row.get("overall_rating") or "—"
+    tactical = row.get("attr_tactical") or "—"
+    lines = [
+        f"",
+        f"🛡️ DEFENSIVE PROFILE (bzzoiro attributes)",
+        f"  Defending rating: {defending}  |  Overall: {overall}  |  Tactical: {tactical}",
+    ]
+    if defending >= 80:
+        lines.append(f"  Tier: Elite defender")
+    elif defending >= 75:
+        lines.append(f"  Tier: Strong defender")
+    elif defending >= 65:
+        lines.append(f"  Tier: Solid")
+    else:
+        lines.append(f"  Tier: Average")
+    return lines
+
+
+def _lookup_bzz_defending(player_name: str) -> int | None:
+    """Best attr_defending for a player name from bzzoiro (understat fallback)."""
+    rows = find_bzzoiro_player(player_name)
+    ratings = [r for r in (parse_attr_defending(row) for row in rows) if r is not None]
+    return max(ratings) if ratings else None
+
+
+def _format_top_defenders_table(team: str, profile: dict, top_n: int) -> list[str]:
+    """Shared formatter for defender ranking sections."""
+    avg = profile["avg_def_rating"]
+    elite = profile["elite_count"]
+    count = profile["defender_count"]
+    lines = [
+        f"🛡️ TOP DEFENDERS — {team.upper()} (2025-26 Club Season)",
+        f"Ranked by defending attribute + club event stats (DF/GK) — {count} rated players",
+        f"Squad avg defending: {avg if avg is not None else 'N/A'}"
+        f"  |  Elite (≥75): {elite}",
+        "",
+        f"{'Rk':<4} {'Player':<22} {'Pos':<4} {'Club':<18} {'Def':>4} {'Tkl':>4} {'Int':>4} {'Clr':>4} {'OVR':>4}",
+        "─" * 72,
+    ]
+    for i, entry in enumerate(profile["top_defenders"][:top_n], 1):
+        row = entry["row"]
+        rating = entry["rating"]
+        name = row.get("player_name", "?")[:22]
+        pos = row.get("wc_position", "?")
+        club = (row.get("club_name") or "?")[:18]
+        ovr = row.get("overall_rating") or "—"
+        tkl = parse_int_field(row, "club_tackles")
+        intr = parse_int_field(row, "club_interceptions")
+        clr = parse_int_field(row, "club_clearances")
+        lines.append(
+            f"{i:<4} {name:<22} {pos:<4} {club:<18} {rating:>4} {tkl:>4} {intr:>4} {clr:>4} {str(ovr):>4}"
+        )
+    lines.append(
+        f"\nℹ️  Def = bzzoiro attribute; Tkl/Int/Clr = club-season event totals from bulk export."
+    )
+    return lines
 
 
 async def get_player_club_stats(player_name: str) -> str:
@@ -65,6 +129,14 @@ async def get_player_club_stats(player_name: str) -> str:
             kp     = row.get("key_passes", "0")
             lq  = get_league_quality(row.get("league", ""))
             adj = round(npxg * lq, 2)
+            def_rating = _lookup_bzz_defending(name)
+            def_block = []
+            if def_rating is not None:
+                def_block = [
+                    f"",
+                    f"🛡️ DEFENSIVE PROFILE",
+                    f"  Defending rating: {def_rating}  (bzzoiro attribute — use get_nation_top_defenders for full squad view)",
+                ]
             sections.append("\n".join([
                 f"⚽ CLUB FORM 2025-26: {name}",
                 f"{club} | {league} {quality_label(lq)} | {pos}",
@@ -78,6 +150,7 @@ async def get_player_club_stats(player_name: str) -> str:
                 f"  xGChain:   {xgchain:<8} (build-up involvement)",
                 f"  xGBuildup: {xgbuildup:<8} (non-shot/key-pass involvement)",
                 f"  Shots:     {shots} | Key passes: {kp}",
+                *def_block,
                 f"",
                 f"📅 {games} games | {mins} mins played",
             ]))
@@ -116,6 +189,7 @@ async def get_player_club_stats(player_name: str) -> str:
             f"  Assists:   {assists:<6} (xA: {xa})",
             f"  Shots:     {shots} | Key passes: {kp}",
             f"  Avg match rating: {rating}",
+            *_defensive_lines_for_bzz(row),
             f"",
             f"📅 {matches} games | {mins} mins played",
             f"ℹ️  Adj. xG discounts raw xG by league quality — not all leagues are equal",
@@ -201,7 +275,39 @@ async def get_nation_top_performers(team: str, top_n: int = 5) -> str:
         lines.append(f"\nℹ️  Adj. xG = raw xG × quality factor. 20 xG in ★ leagues ≠ 20 xG in ★★★★★.")
 
     result = "\n".join(lines)
-    cache.set("form", result, team_id=team_id, top_n=top_n, source="csv_v2")
+    cache.set("form", result, team_id=team_id, top_n=top_n, source="csv_v3")
+    return result
+
+
+async def get_nation_top_defenders(team: str, top_n: int = 5) -> str:
+    """
+    Return a World Cup team's top defenders and goalkeepers ranked by bzzoiro defending attribute.
+    Use when the user asks: best defenders for [team], strongest back line, top centre-backs,
+    who protects [team]'s goal, defensive strength, best GK for [team].
+    top_n controls list length (default 5, max 15). For attackers use get_nation_top_performers.
+    """
+    top_n = max(1, min(15, top_n))
+    team_id = resolve_team_id(team)
+    if team_id is None:
+        return f"Team '{team}' not found. Try full name (e.g. 'South Korea', 'United States')."
+
+    cached = cache.get("form", team_id=team_id, top_n=top_n, source="defenders_v2")
+    if cached:
+        return cached
+
+    bzz_squad = get_bzzoiro_squad(team)
+    if not bzz_squad:
+        return f"No squad data found for '{team}'. Check the team name."
+
+    profile = defensive_profile_from_squad(bzz_squad, top_n=top_n)
+    if not profile["top_defenders"]:
+        return (
+            f"No defending attribute data for '{team}' squad. "
+            f"Try analyze_team_for_worldcup for WC tournament xGA/clean sheets once matches begin."
+        )
+
+    result = "\n".join(_format_top_defenders_table(team, profile, top_n))
+    cache.set("form", result, team_id=team_id, top_n=top_n, source="defenders_v2")
     return result
 
 
@@ -269,17 +375,18 @@ async def search_players(
     position: str = "",
     league: str = "",
     min_xg: float = 0.0,
+    min_def: float = 0.0,
     top_n: int = 10,
 ) -> str:
     """
     Search 2025-26 club season stats across all World Cup players by name, position, league,
-    or minimum xG threshold. Covers top-6 European leagues (understat, with npxG/xGChain) and
+    or minimum xG / defending rating threshold. Covers top-6 European leagues (understat) and
     all other leagues worldwide (bzzoiro). Use when the user asks: find strikers with xG > 10,
-    top midfielders in La Liga, search for [player], players with most assists, show EPL forwards,
-    who has highest xG, best Saudi League players.
+    top midfielders in La Liga, best defenders with rating > 75, search for [player].
     position: F (forward), M (midfielder), D (defender), GK — partial match.
     league: EPL, La Liga, Bundesliga, Serie A, Ligue 1, RFPL, or any bzzoiro league name.
     min_xg: minimum season xG to filter by.
+    min_def: minimum bzzoiro defending attribute (0–100); best for DF/GK searches.
     """
     top_n = max(1, min(50, top_n))
     q = query.lower().strip()
@@ -316,6 +423,9 @@ async def search_players(
         xg = _safe_float(row.get("club_xg"))
         if min_xg > 0 and xg < min_xg:
             continue
+        def_rating = parse_attr_defending(row)
+        if min_def > 0 and (def_rating is None or def_rating < min_def):
+            continue
         if row.get("player_name", "").lower() in understat_names:
             continue  # understat row already included
         norm = normalize_bzz_player(row)
@@ -328,9 +438,24 @@ async def search_players(
         if position:   parts.append(f"position '{position}'")
         if league:     parts.append(f"league '{league}'")
         if min_xg > 0: parts.append(f"xG ≥ {min_xg}")
+        if min_def > 0: parts.append(f"defending ≥ {min_def}")
         return f"No players found matching: {', '.join(parts) or 'no filters specified'}."
 
-    filtered.sort(key=lambda r: _safe_float(r.get("xG")), reverse=True)
+    pos_upper = position.upper()
+    sort_by_def = min_def > 0 or pos_upper in ("D", "DF", "GK")
+
+    if sort_by_def:
+        def sort_key(r: dict) -> float:
+            if r.get("_source") == "bzzoiro":
+                bzz = r.get("_bzz", r)
+                val = parse_attr_defending(bzz)
+            else:
+                val = _lookup_bzz_defending(r.get("player_name", ""))
+            return float(val or 0)
+
+        filtered.sort(key=sort_key, reverse=True)
+    else:
+        filtered.sort(key=lambda r: _safe_float(r.get("xG")), reverse=True)
     top = filtered[:top_n]
 
     filter_parts = []
@@ -338,12 +463,41 @@ async def search_players(
     if position:   filter_parts.append(f"pos={position.upper()}")
     if league:     filter_parts.append(league)
     if min_xg > 0: filter_parts.append(f"xG≥{min_xg}")
+    if min_def > 0: filter_parts.append(f"def≥{int(min_def)}")
     filters_str = " | ".join(filter_parts) if filter_parts else "all players"
 
+    sort_label = "defending rating" if sort_by_def else "xG"
     lines = [
         f"🔍 PLAYER SEARCH — {filters_str}",
-        f"Found {len(filtered)} players | Showing top {len(top)} by xG",
+        f"Found {len(filtered)} players | Showing top {len(top)} by {sort_label}",
         "",
+    ]
+
+    if sort_by_def:
+        lines += [
+            f"  {'Player':<25} {'Club':<22} {'League':<18} {'Def':>5} {'OVR':>5} {'Pos':>4}",
+            f"  {'─'*82}",
+        ]
+        for row in top:
+            name = row.get("player_name", "?")
+            if row.get("_source") == "bzzoiro":
+                bzz = row.get("_bzz", row)
+                club = bzz.get("club_name", "?")
+                lg = row.get("_bzz_raw_league") or bzz.get("club_league_name", "—")
+                def_r = parse_attr_defending(bzz)
+                ovr = bzz.get("overall_rating") or "—"
+                pos = bzz.get("wc_position", "?")
+            else:
+                club = row.get("team_title", "?")
+                lg = LEAGUE_DISPLAY.get(row.get("league", ""), row.get("league", "?"))
+                def_r = _lookup_bzz_defending(name)
+                ovr = "—"
+                pos = row.get("position", "?")[:3]
+            def_s = str(def_r) if def_r is not None else "—"
+            lines.append(f"  {name:<25} {club:<22} {lg:<18} {def_s:>5} {str(ovr):>5} {pos:>4}")
+        return "\n".join(lines)
+
+    lines += [
         f"  {'Player':<25} {'Club':<22} {'League':<20} {'xG':>6} {'Goals':>6} {'npxG':>6} {'xA':>5}",
         f"  {'─'*88}",
     ]

@@ -9,6 +9,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, RedirectResponse
 from starlette.routing import Route
 
+from auth.token_store import TokenStore
 from fastmcp.server.auth import AccessToken, OAuthProvider
 from fastmcp.server.auth.auth import ClientRegistrationOptions
 
@@ -19,26 +20,29 @@ TOKEN_TTL = 30 * 24 * 3600  # 30 days
 
 class SimpleOAuthProvider(OAuthProvider):
     """
-    Minimal in-memory OAuth 2.0 provider for self-hosted MCP.
+    OAuth 2.0 provider for self-hosted MCP with SQLite-backed token persistence.
     Shows a one-click approval page — no username/password required.
-    Tokens expire after 30 days.
+    Tokens expire after 30 days and survive server redeploys when OAUTH_DB_PATH is on a volume.
     """
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, store: TokenStore | None = None):
         super().__init__(
             base_url=base_url,
             client_registration_options=ClientRegistrationOptions(enabled=True),
         )
-        self._clients: dict[str, OAuthClientInformationFull] = {}
+        self._store = store or TokenStore()
         self._codes: dict[str, AuthorizationCode] = {}
-        self._tokens: dict[str, AccessToken] = {}
         self._pending: dict[str, dict] = {}
+        logger.info(
+            f"OAuth store ready at {self._store.db_path} "
+            f"({self._store.token_count()} active token(s))"
+        )
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
-        self._clients[client_info.client_id] = client_info
+        self._store.save_client(client_info)
 
     async def get_client(self, client_id: str) -> Optional[OAuthClientInformationFull]:
-        return self._clients.get(client_id)
+        return self._store.get_client(client_id)
 
     async def authorize(self, client: OAuthClientInformationFull, params: AuthorizationParams) -> str:
         session_id = secrets.token_hex(16)
@@ -67,23 +71,29 @@ class SimpleOAuthProvider(OAuthProvider):
 
         del self._codes[code_str]
         token_str = secrets.token_hex(32)
-        self._tokens[token_str] = AccessToken(
+        access = AccessToken(
             token=token_str,
             client_id=client.client_id,
             scopes=authorization_code.scopes,
             expires_at=int(time.time()) + TOKEN_TTL,
         )
-        logger.info(f"Token issued for client={client.client_id} expires_at={int(time.time()) + TOKEN_TTL}")
+        self._store.save_token(access)
+        logger.info(
+            f"Token issued for client={client.client_id} expires_at={access.expires_at}"
+        )
         return OAuthToken(access_token=token_str, token_type="bearer", expires_in=TOKEN_TTL)
 
     async def load_access_token(self, token: str) -> Optional[AccessToken]:
-        at = self._tokens.get(token)
+        at = self._store.get_token(token)
         if at is None:
-            logger.warning(f"load_access_token: token not found (store has {len(self._tokens)} tokens)")
+            logger.warning(
+                f"load_access_token: token not found "
+                f"(store has {self._store.token_count()} tokens)"
+            )
             return None
         if at.expires_at and at.expires_at < time.time():
-            del self._tokens[token]
-            logger.warning(f"load_access_token: token expired")
+            self._store.delete_token(token)
+            logger.warning("load_access_token: token expired")
             return None
         logger.info(f"load_access_token: valid token for client={at.client_id}")
         return at
@@ -98,7 +108,7 @@ class SimpleOAuthProvider(OAuthProvider):
         raise NotImplementedError("Refresh tokens not supported")
 
     async def revoke_token(self, token: str, token_type_hint: str | None = None) -> None:
-        self._tokens.pop(token, None)
+        self._store.delete_token(token)
 
     def get_routes(self, mcp_path: str | None = None) -> list[Route]:
         base_routes = super().get_routes(mcp_path)

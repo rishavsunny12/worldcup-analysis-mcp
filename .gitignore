@@ -1,6 +1,10 @@
 # secrets
 .env
 
+# local oauth token store
+data/oauth.db
+oauth.db
+
 # python
 __pycache__/
 **/__pycache__/

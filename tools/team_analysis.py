@@ -8,6 +8,7 @@ from config import resolve_team_id
 from data.loader import (
     LEAGUE_FILES, find_player, get_adj_xg,
     get_bzzoiro_squad, get_bzzoiro_team, normalize_bzz_player,
+    defensive_profile_from_squad,
 )
 
 logger = logging.getLogger(__name__)
@@ -47,11 +48,19 @@ def _xg_diff_label(diff: float) -> str:
     return "under pressure"
 
 
-def _outlook_label(pedigree: float, proj_gpg: float, wc_xgd: float) -> str:
-    score = pedigree * 0.4 + min(proj_gpg / 1.0, 1.0) * 0.35 + min((wc_xgd + 1) / 2, 1.0) * 0.25
-    if score >= 0.75: return "🏆 Strong contender"
-    if score >= 0.55: return "⭐ Dark horse / solid group-stage team"
-    if score >= 0.35: return "⚠️  Group stage uncertain — needs results"
+def _outlook_label(pedigree: float, proj_gpg: float, wc_xgd: float, defense_score: float = 0.0) -> str:
+    attack = min(proj_gpg / 1.0, 1.0) * 0.35 + min((wc_xgd + 1) / 2, 1.0) * 0.15
+    score = (
+        pedigree * 0.25
+        + attack
+        + defense_score * 0.25
+    )
+    if score >= 0.75:
+        return "🏆 Strong contender"
+    if score >= 0.55:
+        return "⭐ Dark horse / solid group-stage team"
+    if score >= 0.35:
+        return "⚠️  Group stage uncertain — needs results"
     return "❌ Group stage exit risk"
 
 
@@ -203,7 +212,7 @@ async def analyze_team_for_worldcup(team: str) -> str:
     if team_id is None:
         return f"Team '{team}' not found. Try full name (e.g. 'South Korea', 'United States')."
 
-    cached = cache.get("form", team_id=team_id, source="full_analysis")
+    cached = cache.get("form", team_id=team_id, source="full_analysis_v2")
     if cached:
         return cached
 
@@ -230,10 +239,11 @@ async def analyze_team_for_worldcup(team: str) -> str:
     )
     wc  = _parse_wc_stats(wc_raw) if wc_raw else None
     csv = _build_csv_profile(squad_names, bzz_squad)
+    def_prof = defensive_profile_from_squad(bzz_squad, top_n=5)
 
     wc_xgd  = wc["xgd"] if wc else 0.0
     ped     = csv["pedigree_score"] if csv["pedigree_score"] is not None else 0.0
-    outlook = _outlook_label(ped, csv["proj_gpg"], wc_xgd)
+    outlook = _outlook_label(ped, csv["proj_gpg"], wc_xgd, def_prof["defense_score"])
     sep = "━" * 50
 
     lines = [
@@ -269,6 +279,18 @@ async def analyze_team_for_worldcup(team: str) -> str:
             f"  Market value: €{mv:,}  |  Avg squad rating: {avg}  |  Avg age: {age}",
             f"  Combined 2025-26 club: {sqg} goals | xG {sqx} | xA {sqxv}\n",
         ]
+        mgr = bzz_team.get("manager_name")
+        if mgr:
+            formation = bzz_team.get("manager_formation") or "—"
+            tactical = bzz_team.get("manager_tactical_profile") or "—"
+            win_pct = bzz_team.get("manager_win_pct") or "—"
+            avg_ga = bzz_team.get("manager_avg_goals_conceded") or "—"
+            cs_pct = bzz_team.get("manager_clean_sheet_pct") or "—"
+            lines += [
+                f"👔 MANAGER (bzzoiro NT profile)",
+                f"  {mgr}  |  Formation: {formation}  |  Style: {tactical}",
+                f"  Win %: {win_pct}  |  Avg goals conceded: {avg_ga}  |  Clean sheets: {cs_pct}%\n",
+            ]
 
     # Squad pedigree
     lines.append(f"🏟️ SQUAD PEDIGREE (2025-26 Club Season)")
@@ -312,6 +334,27 @@ async def analyze_team_for_worldcup(team: str) -> str:
 
     lines.append(f"\n  Squad xG total: {csv['squad_npxg_total']} | xGChain total: {csv['squad_xgchain_total']}\n")
 
+    # Defensive depth (bzzoiro attributes)
+    if def_prof["top_defenders"]:
+        avg_def = def_prof["avg_def_rating"]
+        lines += [
+            f"🛡️ DEFENSIVE DEPTH (bzzoiro defending attribute)",
+            f"  Avg DF/GK defending: {avg_def}  |  Elite (≥75): {def_prof['elite_count']}"
+            f"  |  Rated players: {def_prof['defender_count']}",
+            f"  {'Player':<24} {'Pos':<4} {'Club':<22} {'Def':>4} {'OVR':>4}",
+            f"  {'─'*62}",
+        ]
+        for entry in def_prof["top_defenders"]:
+            row = entry["row"]
+            tkl = row.get("club_tackles") or "—"
+            intr = row.get("club_interceptions") or "—"
+            lines.append(
+                f"  {row.get('player_name', '?'):<22} {row.get('wc_position', '?'):<4}"
+                f" {row.get('club_name', '?'):<22} {entry['rating']:>4}"
+                f" {str(row.get('overall_rating') or '—'):>4}  Tkl {tkl} Int {intr}"
+            )
+        lines.append("")
+
     # Prediction
     lines += [
         f"🔮 PERFORMANCE PREDICTION",
@@ -344,7 +387,15 @@ async def analyze_team_for_worldcup(team: str) -> str:
     else:
         lines.append(f"  ⚠️  Attacking output looks limited from club data")
 
+    if def_prof["avg_def_rating"] is not None:
+        if def_prof["avg_def_rating"] >= 75:
+            lines.append(f"  ✅ Strong defensive depth — avg defending {def_prof['avg_def_rating']}")
+        elif def_prof["avg_def_rating"] >= 68:
+            lines.append(f"  🟡 Solid back line — avg defending {def_prof['avg_def_rating']}")
+        else:
+            lines.append(f"  ⚠️  Defensive depth a concern — avg defending {def_prof['avg_def_rating']}")
+
     lines.append(f"\n{sep}")
     result = "\n".join(lines)
-    cache.set("form", result, team_id=team_id, source="full_analysis")
+    cache.set("form", result, team_id=team_id, source="full_analysis_v2")
     return result

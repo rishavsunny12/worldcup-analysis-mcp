@@ -315,3 +315,139 @@ def get_bzzoiro_team(team_name: str) -> dict | None:
         return BZZ_TEAMS_BY_NAME[key]
     close = difflib.get_close_matches(key, BZZ_TEAMS_BY_NAME.keys(), n=1, cutoff=0.70)
     return BZZ_TEAMS_BY_NAME[close[0]] if close else None
+
+
+# ── Defensive profile (bzzoiro attr_defending) ────────────────────────────────
+
+DEFENSIVE_WC_POSITIONS = frozenset({"DF", "GK"})
+
+
+def parse_attr_defending(row: dict) -> int | None:
+    """Return bzzoiro defending attribute (0–100) or None if missing."""
+    val = row.get("attr_defending")
+    if val is None or val == "":
+        return None
+    try:
+        return int(float(val))
+    except (TypeError, ValueError):
+        return None
+
+
+def is_defensive_player(row: dict) -> bool:
+    """True for centre-backs, full-backs, and goalkeepers in bzzoiro/understat rows."""
+    pos = (row.get("wc_position") or row.get("position") or "").upper()
+    if pos in DEFENSIVE_WC_POSITIONS:
+        return True
+    return pos.startswith("D") or pos == "GK"
+
+
+def defense_score_from_avg(avg: float | None) -> float:
+    """Map average attr_defending (typical 55–85) to a 0–1 composite weight."""
+    if avg is None:
+        return 0.0
+    return round(max(0.0, min(1.0, (avg - 55) / 30)), 3)
+
+
+def parse_int_field(row: dict, key: str) -> int:
+    try:
+        return int(float(row.get(key) or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def defender_event_score(row: dict) -> float:
+    """Composite club-season defensive actions score from bulk CSV event stats."""
+    pos = (row.get("wc_position") or "").upper()
+    tackles = parse_int_field(row, "club_tackles")
+    interceptions = parse_int_field(row, "club_interceptions")
+    clearances = parse_int_field(row, "club_clearances")
+    aerial = parse_int_field(row, "club_aerial_won")
+    saves = parse_int_field(row, "club_saves")
+    recovery = parse_int_field(row, "club_ball_recovery")
+    base = tackles + interceptions * 1.2 + clearances * 0.8 + aerial * 0.5 + recovery * 0.3
+    if pos == "GK":
+        return saves * 2.0 + base * 0.3
+    return base
+
+
+def defensive_profile_from_squad(bzz_squad: list[dict], top_n: int = 5) -> dict:
+    """Squad defensive summary using attr_defending + club event stats."""
+    candidates: list[tuple[float, int | None, dict]] = []
+    attr_vals: list[int] = []
+
+    for row in bzz_squad:
+        if not is_defensive_player(row):
+            continue
+        attr = parse_attr_defending(row)
+        if attr is not None:
+            attr_vals.append(attr)
+        event = defender_event_score(row)
+        attr_part = (attr or 0) * 0.4
+        event_part = min(event / 80.0, 1.0) * 60.0
+        composite = round(attr_part + event_part, 1)
+        if attr is not None or event > 0:
+            candidates.append((composite, attr, row))
+
+    if not candidates:
+        return {
+            "avg_def_rating": None,
+            "elite_count": 0,
+            "defender_count": 0,
+            "defense_score": 0.0,
+            "top_defenders": [],
+        }
+
+    avg = round(sum(attr_vals) / len(attr_vals), 1) if attr_vals else None
+    elite = sum(1 for v in attr_vals if v >= 75)
+    top = sorted(candidates, key=lambda x: x[0], reverse=True)[:top_n]
+
+    return {
+        "avg_def_rating": avg,
+        "elite_count": elite,
+        "defender_count": len(candidates),
+        "defense_score": defense_score_from_avg(avg),
+        "top_defenders": [
+            {"rating": attr or 0, "score": score, "row": row}
+            for score, attr, row in top
+        ],
+    }
+
+
+# ── Predictions & fixtures CSVs ───────────────────────────────────────────────
+
+def _load_bzz_csv(path: Path) -> list[dict]:
+    if not path.exists():
+        logger.warning(f"bzzoiro CSV not found: {path}")
+        return []
+    with path.open(encoding="utf-8") as f:
+        return list(csv.DictReader(f))
+
+
+BZZ_PREDICTIONS: list[dict] = _load_bzz_csv(ROOT / "data" / "bzzoiro_wc_predictions.csv")
+BZZ_FIXTURES: list[dict] = _load_bzz_csv(ROOT / "data" / "bzzoiro_wc_fixtures.csv")
+
+
+def _name_in_team(name: str, query: str) -> bool:
+    n = _normalize(name)
+    q = _normalize(query)
+    return q in n or n in q
+
+
+def find_bzzoiro_prediction(team_a: str, team_b: str) -> dict | None:
+    """Find ML prediction row for a fixture between two teams (either home/away order)."""
+    for row in BZZ_PREDICTIONS:
+        home, away = row.get("home_team", ""), row.get("away_team", "")
+        if (_name_in_team(home, team_a) and _name_in_team(away, team_b)) or (
+            _name_in_team(home, team_b) and _name_in_team(away, team_a)
+        ):
+            return row
+    return None
+
+
+def get_bzzoiro_fixtures(team_name: str) -> list[dict]:
+    """Return WC fixture rows involving this national team."""
+    return [
+        row for row in BZZ_FIXTURES
+        if _name_in_team(row.get("home_team", ""), team_name)
+        or _name_in_team(row.get("away_team", ""), team_name)
+    ]

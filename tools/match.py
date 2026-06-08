@@ -4,6 +4,7 @@ import logging
 from cache.cache_manager import cache
 from clients.api_football import api_football
 from config import resolve_team_id
+from data.loader import find_bzzoiro_prediction
 
 logger = logging.getLogger(__name__)
 
@@ -225,8 +226,27 @@ def _format_preview(team_a: str, team_b: str, stats_a: dict, stats_b: dict, h2h_
         f"  Possession:  {str(a['poss'])+'%':<16} {b['poss']}%",
         f"  Shots/game:  {str(a['spm']):<16} {b['spm']}",
         f"  Clean sh:    {str(a['cs_pct'])+'%':<16} {b['cs_pct']}%",
-        f"\n{sep}",
     ]
+
+    pred = find_bzzoiro_prediction(team_a, team_b)
+    if pred:
+        ph = _safe_float(pred.get("prob_home"))
+        pd = _safe_float(pred.get("prob_draw"))
+        pa = _safe_float(pred.get("prob_away"))
+        xgh = pred.get("xg_home") or "—"
+        xga = pred.get("xg_away") or "—"
+        result = pred.get("predicted_result") or "—"
+        score = pred.get("most_likely_score") or "—"
+        conf = pred.get("model_confidence") or "—"
+        lines += [
+            f"\n🔮 BZZOIRO ML PREDICTION (bulk export)",
+            f"  {pred.get('home_team', a['name'])} vs {pred.get('away_team', b['name'])}",
+            f"  Win probs: Home {ph:.0f}% · Draw {pd:.0f}% · Away {pa:.0f}%",
+            f"  Predicted: {result}  |  xG {xgh}–{xga}  |  Likely score: {score}",
+            f"  Model confidence: {conf}",
+        ]
+
+    lines += [f"\n{sep}"]
     return "\n".join(lines)
 
 
@@ -244,7 +264,7 @@ async def get_match_preview(team_a: str, team_b: str) -> str:
         return f"Team '{team_b}' not found. Try full name (e.g. 'South Korea', 'United States')."
 
     key = tuple(sorted([id_a, id_b]))
-    cached = cache.get("form", team_a_id=key[0], team_b_id=key[1], preview=True)
+    cached = cache.get("form", team_a_id=key[0], team_b_id=key[1], preview=True, source="preview_v2")
     if cached:
         return cached
 
@@ -270,5 +290,5 @@ async def get_match_preview(team_a: str, team_b: str) -> str:
         )
 
     result = _format_preview(team_a, team_b, stats_a or {"response": {}}, stats_b or {"response": {}}, h2h_data)
-    cache.set("form", result, team_a_id=key[0], team_b_id=key[1], preview=True)
+    cache.set("form", result, team_a_id=key[0], team_b_id=key[1], preview=True, source="preview_v2")
     return result
