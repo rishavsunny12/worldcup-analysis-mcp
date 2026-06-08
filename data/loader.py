@@ -52,6 +52,7 @@ LEAGUE_QUALITY: dict[str, float] = {
     "Eredivisie":              0.82,
     "Primeira Liga":           0.82,
     "Liga Portugal":           0.82,
+    "Liga Portugal Betclic":   0.82,
     "Pro League":              0.78,   # Belgian
     "Jupiler Pro League":      0.78,
     "Süper Lig":               0.78,
@@ -94,6 +95,8 @@ LEAGUE_QUALITY: dict[str, float] = {
     "Iran Pro League":         0.62,
     "AFC Champions League":    0.65,
     # Africa
+    "South African Premiership": 0.58,
+    "PSL":                     0.58,
     "CAF Champions League":    0.65,
     "Egyptian Premier League": 0.62,
     "Botola Pro":              0.58,
@@ -209,13 +212,90 @@ def find_player(name: str) -> list[dict]:
     return []
 
 
+def find_player_for_squad(name: str, bzz_row: dict | None = None) -> list[dict]:
+    """Match understat rows for a national-squad player, rejecting cross-player false hits.
+
+    Requires exact normalized name match, or a club name match when the bzzoiro row
+    is available (prevents e.g. a South Africa name loosely matching Jayden Addai).
+    """
+    key = _normalize(name)
+    rows = find_player(name)
+    if not rows:
+        return []
+
+    exact = [r for r in rows if _normalize(r.get("player_name", "")) == key]
+    if exact:
+        return exact
+
+    if not bzz_row:
+        return []
+
+    club = _normalize(bzz_row.get("club_name") or "")
+    if club:
+        club_matches = [
+            r for r in rows
+            if club in _normalize(r.get("team_title") or "")
+            or _normalize(r.get("team_title") or "") in club
+        ]
+        if club_matches:
+            return club_matches
+    return []
+
+
+# Labels that are cups/old tournaments — not a player's current domestic league.
+_STALE_LEAGUE_LABELS = frozenset({
+    "Africa Cup of Nations 2023",
+    "International Friendly Games",
+})
+
+# Continental cups stored on the club row — infer domestic league from country instead.
+_CONTINENTAL_CUP_LABELS = frozenset({
+    "CAF Champions League",
+    "AFC Champions League",
+    "UEFA Champions League",
+    "UEFA Europa League",
+})
+
+_COUNTRY_DOMESTIC_LEAGUE: dict[str, str] = {
+    "South Africa": "South African Premiership",
+    "Norway": "Norwegian Eliteserien",
+    "Germany": "Bundesliga",
+    "USA": "MLS",
+    "England": "Premier League",
+    "Italy": "Serie A",
+    "Spain": "La Liga",
+    "France": "Ligue 1",
+    "Portugal": "Liga Portugal",
+    "Cyprus": "Cypriot First Division",
+}
+
+
+def resolve_club_league_name(row: dict) -> str:
+    """Return a display-ready current league for a bzzoiro player row."""
+    raw = (row.get("club_league_name") or "").strip()
+    if raw in BZZ_LEAGUE_MAP:
+        return raw
+
+    low = raw.lower()
+    if "liga portugal" in low:
+        return "Liga Portugal"
+
+    country = (row.get("club_country") or row.get("nationality") or "").strip()
+    if raw in _STALE_LEAGUE_LABELS or raw in _CONTINENTAL_CUP_LABELS or not raw:
+        domestic = _COUNTRY_DOMESTIC_LEAGUE.get(country)
+        if domestic:
+            return domestic
+
+    return raw or "Unknown"
+
+
 # ── Bzzoiro data ──────────────────────────────────────────────────────────────
 
 def normalize_bzz_player(row: dict) -> dict:
     """Adapt a bzzoiro player row to understat-compatible field names so all
     downstream profile/formatting code can handle both sources uniformly.
     Includes _league_quality and _adj_xg for cross-league fair comparison."""
-    raw_league = row.get("club_league_name", "") or ""
+    raw_league = resolve_club_league_name(row)
     league     = BZZ_LEAGUE_MAP.get(raw_league, "")
     position   = BZZ_POS_MAP.get(row.get("wc_position", ""), row.get("wc_position", ""))
     xg         = row.get("club_xg") or "0"
@@ -313,8 +393,12 @@ def find_bzzoiro_player(name: str) -> list[dict]:
     return BZZ_PLAYER_INDEX[close[0]] if close else []
 
 
-def get_bzzoiro_squad(team_name: str) -> list[dict]:
-    """Return raw bzzoiro player rows for a national team, looked up by name."""
+def get_bzzoiro_squad(team_name: str, official_only: bool = True) -> list[dict]:
+    """Return bzzoiro player rows for a national team, looked up by name.
+
+    official_only=True (default) keeps the 26-man WC list and excludes preliminary
+    call-ups so all squad tools report the same roster size.
+    """
     key = _normalize(team_name)
     team = BZZ_TEAMS_BY_NAME.get(key)
     if not team:
@@ -323,7 +407,12 @@ def get_bzzoiro_squad(team_name: str) -> list[dict]:
     if not team:
         return []
     tid = int(team["team_id"])
-    return BZZ_SQUAD_INDEX.get(tid, [])
+    squad = BZZ_SQUAD_INDEX.get(tid, [])
+    if official_only:
+        official = [p for p in squad if (p.get("wc_status") or "").lower() == "official"]
+        if official:
+            return official
+    return squad
 
 
 def get_bzzoiro_team(team_name: str) -> dict | None:
