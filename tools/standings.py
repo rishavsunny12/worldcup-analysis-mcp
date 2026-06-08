@@ -165,7 +165,7 @@ async def get_group_overview(group: str) -> str:
     if group not in VALID_GROUPS:
         return f"Invalid group '{group}'. Use A through L."
 
-    cached = cache.get("standings", group=group, source="overview_v2")
+    cached = cache.get("standings", group=group, source="overview_v3")
     if cached:
         return cached
 
@@ -227,5 +227,5 @@ async def get_group_overview(group: str) -> str:
     ]
 
     result = "\n".join(lines)
-    cache.set("standings", result, group=group, source="overview_v2")
+    cache.set("standings", result, group=group, source="overview_v3")
     return result
