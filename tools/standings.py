@@ -3,8 +3,10 @@ import logging
 
 from cache.cache_manager import cache
 from clients.api_football import api_football
+from clients.bzzoiro import bzzoiro
 from clients.football_data import football_data
-from config import GROUP_MAP, TEAM_ID_MAP, settings
+from config import GROUP_MAP, TEAM_ID_MAP, settings, uses_bzzoiro_live
+from tools.bzzoiro_parsers import parse_bzzoiro_standings
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +108,12 @@ async def get_group_standings(group: str = "all") -> str:
         return cached
 
     try:
-        if settings.TIER == "free":
+        if uses_bzzoiro_live():
+            raw = await bzzoiro.get_standings()
+            groups = parse_bzzoiro_standings(raw)
+            if "ALL" in groups and group != "ALL":
+                groups = {k: v for k, v in groups.items() if k != "ALL"}
+        elif settings.TIER == "free":
             raw = await football_data.get_standings()
             groups = _parse_football_data_standings(raw)
         else:
@@ -150,6 +157,7 @@ async def get_group_overview(group: str) -> str:
     who's in Group [X], how does Group [X] look, strongest group, Group [X] breakdown.
     Returns standings + per-team squad profile + predicted finish order by pedigree.
     """
+    from data.loader import get_bzzoiro_squad
     from tools.team_analysis import _fetch_squad, _build_csv_profile, LEAGUE_DISPLAY
     from tools.compare import _top_attacker
 
@@ -157,7 +165,7 @@ async def get_group_overview(group: str) -> str:
     if group not in VALID_GROUPS:
         return f"Invalid group '{group}'. Use A through L."
 
-    cached = cache.get("standings", group=group, source="overview")
+    cached = cache.get("standings", group=group, source="overview_v2")
     if cached:
         return cached
 
@@ -177,7 +185,8 @@ async def get_group_overview(group: str) -> str:
     for team_id, squad in zip(team_ids, squad_results):
         squad_names = squad if not isinstance(squad, Exception) else []
         name = _ID_TO_NAME.get(team_id, f"Team {team_id}")
-        csv_prof = _build_csv_profile(squad_names)
+        bzz_squad = get_bzzoiro_squad(name)
+        csv_prof = _build_csv_profile(squad_names, bzz_squad or None)
         top = _top_attacker(csv_prof)
         profiles.append((name, csv_prof, top))
 
@@ -212,5 +221,5 @@ async def get_group_overview(group: str) -> str:
     ]
 
     result = "\n".join(lines)
-    cache.set("standings", result, group=group, source="overview")
+    cache.set("standings", result, group=group, source="overview_v2")
     return result

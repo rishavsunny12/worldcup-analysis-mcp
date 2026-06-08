@@ -35,5 +35,6 @@ Set these in Railway **Variables**:
 | `API_FOOTBALL_KEY` | Yes |
 | `FOOTBALL_DATA_KEY` | Yes |
 | `BZZOIRO_KEY` | Yes |
-| `API_FOOTBALL_TIER` | Yes (`free` or `paid`) |
+| `LIVE_DATA_SOURCE` | Optional (`bzzoiro` default — live scores, standings, form; set `legacy` for API-Football / football-data.org) |
+| `API_FOOTBALL_TIER` | Yes (`free` or `paid`; used only when `LIVE_DATA_SOURCE=legacy` or `get_match_preview`) |
 | `OAUTH_DB_PATH` | Recommended (`/data/oauth.db`) |

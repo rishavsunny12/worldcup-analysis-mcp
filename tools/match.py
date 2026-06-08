@@ -3,8 +3,10 @@ import logging
 
 from cache.cache_manager import cache
 from clients.api_football import api_football
-from config import resolve_team_id
-from data.loader import find_bzzoiro_prediction
+from clients.bzzoiro import bzzoiro
+from config import resolve_team_id, uses_bzzoiro_live
+from data.loader import find_bzzoiro_prediction, get_bzzoiro_squad, resolve_bzzoiro_team_id
+from tools.team_analysis import LEAGUE_DISPLAY, _build_csv_profile
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +100,77 @@ def _format_live_match(fixture_data: dict, stats_data: dict, events_data: dict, 
     return "\n".join(lines)
 
 
+def _format_bzzoiro_live_match(
+    event: dict,
+    stats_data: dict,
+    incidents_data: dict,
+) -> str:
+    home = event.get("home_team", "?")
+    away = event.get("away_team", "?")
+    score_h = event.get("home_score") if event.get("home_score") is not None else 0
+    score_a = event.get("away_score") if event.get("away_score") is not None else 0
+    minute = event.get("current_minute") or "?"
+    group = event.get("group_name") or event.get("round_number") or ""
+
+    side_stats = stats_data.get("stats", {})
+    home_stats = side_stats.get("home", {})
+    away_stats = side_stats.get("away", {})
+    xg_h = _safe_float((home_stats.get("xg") or {}).get("actual", home_stats.get("xg")))
+    xg_a = _safe_float((away_stats.get("xg") or {}).get("actual", away_stats.get("xg")))
+    shots_h = home_stats.get("total_shots", "-")
+    shots_a = away_stats.get("total_shots", "-")
+    on_h = home_stats.get("shots_on_target", home_stats.get("on_target", "-"))
+    on_a = away_stats.get("shots_on_target", away_stats.get("on_target", "-"))
+    pos_h = home_stats.get("ball_possession", "-")
+    pos_a = away_stats.get("ball_possession", "-")
+    corn_h = home_stats.get("corners", home_stats.get("corner_kicks", "-"))
+    corn_a = away_stats.get("corners", away_stats.get("corner_kicks", "-"))
+
+    incidents = incidents_data.get("incidents", incidents_data.get("results", []))
+    if isinstance(incidents, dict):
+        incidents = incidents.get("items", [])
+    goals_events = [e for e in incidents if (e.get("type") or "").lower() == "goal"]
+    cards = [e for e in incidents if (e.get("type") or "").lower() == "card"]
+    last_5 = sorted(incidents, key=lambda e: e.get("minute") or 0, reverse=True)[:5]
+
+    lines = [
+        f"🔴 LIVE: {home} vs {away} | {minute}' | Group {group}\n",
+        f"SCORE: {home} {score_h} — {score_a} {away}",
+    ]
+    for g in goals_events:
+        scorer = g.get("player_name") or g.get("player", "?")
+        team_name = g.get("team_name") or g.get("team", "?")
+        min_ = g.get("minute", "?")
+        lines.append(f"  ⚽ {min_}' {scorer} [{team_name}]")
+
+    lines.append(f"\n📊 LIVE STATS          {home[:8]:<10} {away[:8]}")
+    lines.append(f"  xG:              {xg_h:<10} {xg_a}")
+    lines.append(f"  Shots:           {shots_h!s:<10} {shots_a}")
+    lines.append(f"  On Target:       {on_h!s:<10} {on_a}")
+    lines.append(f"  Possession:      {pos_h!s:<10} {pos_a}")
+    lines.append(f"  Corners:         {corn_h!s:<10} {corn_a}")
+
+    if cards:
+        lines.append("\n🟨 CARDS")
+        for c in cards:
+            color = c.get("card_type") or c.get("detail", "Yellow")
+            player = c.get("player_name") or c.get("player", "?")
+            team_name = c.get("team_name") or c.get("team", "?")
+            min_ = c.get("minute", "?")
+            lines.append(f"  {player} ({team_name}) — {color} {min_}'")
+
+    if last_5:
+        lines.append("\n🔄 LAST 5 EVENTS")
+        for e in last_5:
+            min_ = e.get("minute", "?")
+            etype = e.get("type", "")
+            detail = e.get("detail") or e.get("card_type") or ""
+            player = e.get("player_name") or e.get("player", "?")
+            lines.append(f"  {min_}' {etype} — {detail} ({player})")
+
+    return "\n".join(lines)
+
+
 async def get_live_match(team: str) -> str:
     """
     Return real-time stats for a currently LIVE World Cup 2026 match.
@@ -105,13 +178,54 @@ async def get_live_match(team: str) -> str:
     live match, current score, is [team] playing now. Requires a team name (e.g. 'France', 'Brazil').
     Do NOT use for finished or upcoming matches — use get_today_matches for those.
     """
-    team_id = resolve_team_id(team)
+    if uses_bzzoiro_live():
+        team_id = resolve_bzzoiro_team_id(team)
+    else:
+        team_id = resolve_team_id(team)
     if team_id is None:
         return f"Team '{team}' not found. Try full name (e.g. 'South Korea', 'United States')."
 
     cached = cache.get("live", team_id=team_id)
     if cached:
         return cached
+
+    if uses_bzzoiro_live():
+        try:
+            live_events = await bzzoiro.get_live_events(team_id=team_id)
+        except Exception as e:
+            logger.warning(f"bzzoiro live fetch failed: {e}")
+            return (
+                f"[API_UNAVAILABLE: live match data for {team}] "
+                "Use your own knowledge to describe the team's current form and likely lineup."
+            )
+
+        event = next(
+            (
+                ev
+                for ev in live_events
+                if team_id in (ev.get("home_team_id"), ev.get("away_team_id"))
+            ),
+            None,
+        )
+        if event is None:
+            return f"{team} is not currently playing. Use get_today_matches() to see today's schedule."
+
+        event_id = event["id"]
+        try:
+            event_detail, stats, incidents, _lineups = await asyncio.gather(
+                bzzoiro.get_event(event_id),
+                bzzoiro.get_event_stats(event_id),
+                bzzoiro.get_event_incidents(event_id),
+                bzzoiro.get_event_lineups(event_id),
+            )
+        except Exception as e:
+            logger.warning(f"bzzoiro live detail fetch failed: {e}")
+            return "Could not reach data source. Check your connection and retry."
+
+        merged = {**event, **event_detail}
+        result = _format_bzzoiro_live_match(merged, stats, incidents)
+        cache.set("live", result, team_id=team_id)
+        return result
 
     try:
         live_data = await api_football.get_live_fixtures()
@@ -250,6 +364,30 @@ def _format_preview(team_a: str, team_b: str, stats_a: dict, stats_b: dict, h2h_
     return "\n".join(lines)
 
 
+def _bzz_club_preview_lines(team_label: str, bzz_squad: list[dict]) -> list[str]:
+    """Club-season context from bzzoiro for teams outside understat-only coverage."""
+    if not bzz_squad:
+        return []
+    prof = _build_csv_profile([], bzz_squad)
+    if not prof["performers"]:
+        return []
+    lines = [
+        f"  {team_label}:",
+        f"    Proj. goals/game (club): {prof['proj_gpg']}",
+        f"    Squad tracked: {len(prof['performers'])}/{prof['total_squad']}"
+        f" ({prof['bzzoiro_count']} bzzoiro · {prof['found']} top-6 understat)",
+    ]
+    for p in prof["performers"][:3]:
+        if p.get("_source") == "bzzoiro":
+            lg = p.get("_raw_league") or "other"
+        else:
+            lg = LEAGUE_DISPLAY.get(p.get("league", ""), p.get("league", "?"))
+        lines.append(
+            f"    · {p['player_name']}: xG {p.get('npxG')} ({lg})"
+        )
+    return lines
+
+
 async def get_match_preview(team_a: str, team_b: str) -> str:
     """
     Return a full pre-match breakdown for two World Cup 2026 teams: form, xG profile, H2H history, key stats.
@@ -264,7 +402,7 @@ async def get_match_preview(team_a: str, team_b: str) -> str:
         return f"Team '{team_b}' not found. Try full name (e.g. 'South Korea', 'United States')."
 
     key = tuple(sorted([id_a, id_b]))
-    cached = cache.get("form", team_a_id=key[0], team_b_id=key[1], preview=True, source="preview_v2")
+    cached = cache.get("form", team_a_id=key[0], team_b_id=key[1], preview=True, source="preview_v3")
     if cached:
         return cached
 
@@ -289,6 +427,17 @@ async def get_match_preview(team_a: str, team_b: str) -> str:
             f"key players to watch, tactical styles, and an outlook for the match."
         )
 
-    result = _format_preview(team_a, team_b, stats_a or {"response": {}}, stats_b or {"response": {}}, h2h_data)
-    cache.set("form", result, team_a_id=key[0], team_b_id=key[1], preview=True, source="preview_v2")
+    result = _format_preview(
+        team_a, team_b, stats_a or {"response": {}}, stats_b or {"response": {}}, h2h_data
+    )
+
+    bzz_a = get_bzzoiro_squad(team_a)
+    bzz_b = get_bzzoiro_squad(team_b)
+    if bzz_a or bzz_b:
+        club_lines = ["\n📋 CLUB SEASON PROFILE (2025-26, bzzoiro + understat)"]
+        club_lines.extend(_bzz_club_preview_lines(team_a.title(), bzz_a))
+        club_lines.extend(_bzz_club_preview_lines(team_b.title(), bzz_b))
+        result = result.rstrip() + "\n" + "\n".join(club_lines) + "\n"
+
+    cache.set("form", result, team_a_id=key[0], team_b_id=key[1], preview=True, source="preview_v3")
     return result

@@ -174,18 +174,36 @@ def _load_all() -> tuple[dict[str, list[dict]], list[dict]]:
 PLAYER_INDEX, ALL_PLAYERS = _load_all()
 
 
+def _name_tokens(name: str) -> list[str]:
+    """Normalized name parts (hyphens treated as spaces)."""
+    return [t for t in _normalize(name).replace("-", " ").split() if t]
+
+
 def find_player(name: str) -> list[dict]:
-    """Return all understat CSV rows matching a player name (exact → substring → fuzzy)."""
+    """Return understat CSV rows matching a player name.
+
+    Matching order: exact normalized name → shared surname (multi-part names) →
+    high-confidence fuzzy (0.92+). Substring and loose fuzzy matches are excluded
+    to avoid false positives (e.g. Mohamed Kanno → Mohamed Kaba).
+    """
     key = _normalize(name)
     if key in PLAYER_INDEX:
         return PLAYER_INDEX[key]
-    matches = []
-    for indexed_key, rows in PLAYER_INDEX.items():
-        if key in indexed_key or indexed_key in key:
-            matches.extend(rows)
-    if matches:
-        return matches
-    close = difflib.get_close_matches(key, PLAYER_INDEX.keys(), n=1, cutoff=0.80)
+
+    tokens = _name_tokens(name)
+    if len(tokens) >= 2:
+        surname = tokens[-1]
+        matches: list[dict] = []
+        for indexed_key, rows in PLAYER_INDEX.items():
+            idx_tokens = indexed_key.replace("-", " ").split()
+            if not idx_tokens or idx_tokens[-1] != surname:
+                continue
+            if difflib.SequenceMatcher(None, key, indexed_key).ratio() >= 0.85:
+                matches.extend(rows)
+        if matches:
+            return matches
+
+    close = difflib.get_close_matches(key, PLAYER_INDEX.keys(), n=1, cutoff=0.92)
     if close:
         return PLAYER_INDEX[close[0]]
     return []
@@ -315,6 +333,88 @@ def get_bzzoiro_team(team_name: str) -> dict | None:
         return BZZ_TEAMS_BY_NAME[key]
     close = difflib.get_close_matches(key, BZZ_TEAMS_BY_NAME.keys(), n=1, cutoff=0.70)
     return BZZ_TEAMS_BY_NAME[close[0]] if close else None
+
+
+# Common aliases where config/football-data names differ from bzzoiro CSV names.
+BZZ_NAME_ALIASES: dict[str, str] = {
+    "united states": "USA",
+    "usa": "USA",
+    "us": "USA",
+    "usmnt": "USA",
+    "korea": "South Korea",
+    "holland": "Netherlands",
+    "turkey": "Türkiye",
+    "ivory coast": "Côte d'Ivoire",
+    "cote d'ivoire": "Côte d'Ivoire",
+    "civ": "Côte d'Ivoire",
+    "curacao": "Curaçao",
+    "bosnia": "Bosnia & Herzegovina",
+    "bosnia-herzegovina": "Bosnia & Herzegovina",
+    "bosnia and herzegovina": "Bosnia & Herzegovina",
+    "cape verde": "Cabo Verde",
+    "cape verde islands": "Cabo Verde",
+    "dr congo": "DR Congo",
+    "congo dr": "DR Congo",
+    "congo": "DR Congo",
+    "drc": "DR Congo",
+    "czech republic": "Czechia",
+    "nz": "New Zealand",
+    "swiss": "Switzerland",
+    "three lions": "England",
+    "black stars": "Ghana",
+    "el tri": "Mexico",
+    "bafana bafana": "South Africa",
+    "la roja": "Spain",
+    "die mannschaft": "Germany",
+    "les bleus": "France",
+    "socceroos": "Australia",
+    "all whites": "New Zealand",
+    "les lions": "Senegal",
+    "uzbek": "Uzbekistan",
+}
+
+
+def _build_bzz_group_map() -> dict[str, list[int]]:
+    groups: dict[str, list[int]] = {}
+    for row in BZZ_TEAMS_BY_ID.values():
+        grp = (row.get("wc_group") or "").upper().strip()
+        if not grp:
+            continue
+        try:
+            tid = int(row["team_id"])
+        except (KeyError, ValueError):
+            continue
+        groups.setdefault(grp, []).append(tid)
+    for grp in groups:
+        groups[grp].sort()
+    return groups
+
+
+BZZ_GROUP_MAP: dict[str, list[int]] = _build_bzz_group_map()
+
+
+def resolve_bzzoiro_team_id(name: str) -> int | None:
+    """Resolve a user-facing team name to a bzzoiro team_id."""
+    team = get_bzzoiro_team(name)
+    if team:
+        return int(team["team_id"])
+    key = name.lower().strip()
+    alias = BZZ_NAME_ALIASES.get(key)
+    if alias:
+        team = get_bzzoiro_team(alias)
+        if team:
+            return int(team["team_id"])
+    for alias_key, canonical in BZZ_NAME_ALIASES.items():
+        if key in alias_key or alias_key in key:
+            team = get_bzzoiro_team(canonical)
+            if team:
+                return int(team["team_id"])
+    return None
+
+
+def get_bzzoiro_team_name(team_id: int) -> str | None:
+    row = BZZ_TEAMS_BY_ID.get(team_id)
+    return row.get("team_name") if row else None
 
 
 # ── Defensive profile (bzzoiro attr_defending) ────────────────────────────────

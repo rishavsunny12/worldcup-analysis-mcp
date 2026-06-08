@@ -1,0 +1,46 @@
+{
+  "groups": {
+    "C": [
+      {
+        "team_id": 463,
+        "team_name": "Brazil",
+        "played": 2,
+        "won": 2,
+        "drawn": 0,
+        "lost": 0,
+        "gf": 5,
+        "ga": 1,
+        "gd": 4,
+        "pts": 6,
+        "xgf": 4.2,
+        "xga": 1.1,
+        "form": "WW"
+      }
+    ]
+  },
+  "grouped": true,
+  "events": [
+    {
+      "id": 9001,
+      "home_team_id": 463,
+      "home_team": "Brazil",
+      "away_team_id": 465,
+      "away_team": "Haiti",
+      "home_score": 3,
+      "away_score": 0,
+      "event_date": "2026-06-15T18:00:00Z",
+      "status": "finished"
+    },
+    {
+      "id": 9002,
+      "home_team_id": 466,
+      "home_team": "Scotland",
+      "away_team_id": 463,
+      "away_team": "Brazil",
+      "home_score": 1,
+      "away_score": 2,
+      "event_date": "2026-06-20T21:00:00Z",
+      "status": "finished"
+    }
+  ]
+}

@@ -2,8 +2,9 @@ import logging
 
 from cache.cache_manager import cache
 from clients.api_football import api_football
+from clients.bzzoiro import bzzoiro
 from clients.football_data import football_data
-from config import settings
+from config import settings, uses_bzzoiro_live
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,9 @@ async def get_top_scorers(top_n: int = 10) -> str:
         return cached
 
     try:
-        if settings.TIER == "free":
+        if uses_bzzoiro_live():
+            scorers = await bzzoiro.get_top_scorers(top_n=top_n)
+        elif settings.TIER == "free":
             raw = await football_data.get_scorers(limit=top_n)
             scorers = _parse_football_data_scorers(raw, top_n)
         else:

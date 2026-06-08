@@ -22,30 +22,12 @@ async def test_get_group_standings_invalid_group():
 
 
 @pytest.mark.asyncio
-async def test_get_group_standings_happy_path_free_tier():
-    raw = load_fixture("api_football_standings_wc.json")
-    fd_format = {
-        "standings": [
-            {
-                "group": "GROUP_D",
-                "table": [
-                    {"team": {"id": 6, "name": "Brazil"}, "playedGames": 3, "won": 3, "draw": 0,
-                     "lost": 0, "goalsFor": 8, "goalsAgainst": 3, "goalDifference": 5, "points": 9},
-                    {"team": {"id": 10, "name": "England"}, "playedGames": 3, "won": 2, "draw": 0,
-                     "lost": 1, "goalsFor": 5, "goalsAgainst": 3, "goalDifference": 2, "points": 6},
-                    {"team": {"id": 37, "name": "Colombia"}, "playedGames": 3, "won": 1, "draw": 0,
-                     "lost": 2, "goalsFor": 3, "goalsAgainst": 4, "goalDifference": -1, "points": 3},
-                    {"team": {"id": 7, "name": "Uruguay"}, "playedGames": 3, "won": 0, "draw": 0,
-                     "lost": 3, "goalsFor": 1, "goalsAgainst": 7, "goalDifference": -6, "points": 0},
-                ]
-            }
-        ]
-    }
-    with patch("tools.standings.settings") as mock_settings, \
-         patch("tools.standings.football_data") as mock_fd, \
+async def test_get_group_standings_happy_path_bzzoiro():
+    raw = load_fixture("bzzoiro_standings_wc.json")
+    with patch("tools.standings.uses_bzzoiro_live", return_value=True), \
+         patch("tools.standings.bzzoiro") as mock_bzz, \
          patch("tools.standings.cache") as mock_cache:
-        mock_settings.TIER = "free"
-        mock_fd.get_standings = AsyncMock(return_value=fd_format)
+        mock_bzz.get_standings = AsyncMock(return_value=raw)
         mock_cache.get.return_value = None
         mock_cache.set = lambda *a, **kw: None
 
@@ -68,12 +50,11 @@ async def test_get_group_standings_cache_hit():
 
 @pytest.mark.asyncio
 async def test_get_group_standings_api_error():
-    with patch("tools.standings.settings") as mock_settings, \
-         patch("tools.standings.football_data") as mock_fd, \
+    with patch("tools.standings.uses_bzzoiro_live", return_value=True), \
+         patch("tools.standings.bzzoiro") as mock_bzz, \
          patch("tools.standings.cache") as mock_cache:
-        mock_settings.TIER = "free"
-        mock_fd.get_standings = AsyncMock(side_effect=Exception("Network error"))
+        mock_bzz.get_standings = AsyncMock(side_effect=Exception("Network error"))
         mock_cache.get.return_value = None
 
         result = await get_group_standings("A")
-    assert "No data available" in result
+    assert "API_UNAVAILABLE" in result

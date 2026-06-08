@@ -1,0 +1,26 @@
+[
+  {
+    "id": 8001,
+    "league_id": 27,
+    "home_team_id": 463,
+    "home_team": "Brazil",
+    "away_team_id": 493,
+    "away_team": "England",
+    "home_score": 2,
+    "away_score": 1,
+    "event_date": "2022-12-10T19:00:00Z",
+    "status": "finished"
+  },
+  {
+    "id": 8002,
+    "league_id": 10,
+    "home_team_id": 493,
+    "home_team": "England",
+    "away_team_id": 463,
+    "away_team": "Brazil",
+    "home_score": 0,
+    "away_score": 0,
+    "event_date": "2017-11-14T20:00:00Z",
+    "status": "finished"
+  }
+]

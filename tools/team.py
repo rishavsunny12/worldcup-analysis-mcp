@@ -1,8 +1,12 @@
+import asyncio
 import logging
 
 from cache.cache_manager import cache
 from clients.api_football import api_football
-from config import resolve_team_id
+from clients.bzzoiro import bzzoiro
+from config import resolve_team_id, uses_bzzoiro_live
+from data.loader import resolve_bzzoiro_team_id
+from tools.bzzoiro_parsers import bzz_standing_row_for_team, parse_bzz_team_form
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +68,6 @@ def _format_team_form(data: dict, team_id: int, last_n: int) -> str:
 
     clean = resp.get("clean_sheet", {}).get("total", 0)
     clean_pct = round(clean / played * 100) if played else 0
-    possession = resp.get("ball_possession", None)
 
     xgf = _safe_float(xg_raw.get("for", 0)) if xg_raw else 0.0
     xga = _safe_float(xg_raw.get("against", 0)) if xg_raw else 0.0
@@ -72,7 +75,6 @@ def _format_team_form(data: dict, team_id: int, last_n: int) -> str:
     xga_avg = round(xga / played, 2) if played else 0.0
     diff = round(xgf_avg - xga_avg, 2)
 
-    recent = resp.get("lineups", [])
     form_str = "N/A"
 
     lines = [
@@ -91,6 +93,28 @@ def _format_team_form(data: dict, team_id: int, last_n: int) -> str:
     return "\n".join(lines)
 
 
+def _format_bzz_team_form(profile: dict, last_n: int) -> str:
+    diff = round(profile["xgf_avg"] - profile["xga_avg"], 2)
+    lines = [
+        f"📋 {profile['team_name'].upper()} — World Cup 2026 Form\n",
+        f"RECORD: P{profile['played']} W{profile['won']} D{profile['drawn']} "
+        f"L{profile['lost']} | GF {profile['gf']} | GA {profile['ga']}\n",
+        f"FORM STREAK: {profile['form_str']} (last {last_n} WC matches)\n",
+        f"\n📈 xG PROFILE",
+        f"  xG For avg:     {profile['xgf_avg']} per match",
+        f"  xG Against avg: {profile['xga_avg']} per match",
+        f"  xG Diff:        {diff:+.2f} ({_xg_label(diff)})\n",
+        f"🎯 ATTACKING",
+        f"  Goals/match: {profile['gf_avg']}\n",
+        f"🛡️ DEFENSIVE",
+        f"  Goals conceded/match: {profile['ga_avg']}",
+    ]
+    if profile["match_lines"]:
+        lines.append(f"\nLAST {last_n} MATCHES")
+        lines.extend(profile["match_lines"])
+    return "\n".join(lines)
+
+
 async def get_team_form(team: str, last_n: int = 5) -> str:
     """
     Return a team's in-tournament stats and form streak from WC 2026 matches only.
@@ -99,13 +123,41 @@ async def get_team_form(team: str, last_n: int = 5) -> str:
     For full squad + club-season analysis use analyze_team_for_worldcup instead.
     """
     last_n = max(1, min(10, last_n))
-    team_id = resolve_team_id(team)
+    if uses_bzzoiro_live():
+        team_id = resolve_bzzoiro_team_id(team)
+    else:
+        team_id = resolve_team_id(team)
     if team_id is None:
         return f"Team '{team}' not found. Try full name (e.g. 'South Korea', 'United States')."
 
     cached = cache.get("form", team_id=team_id, last_n=last_n)
     if cached:
         return cached
+
+    if uses_bzzoiro_live():
+        try:
+            standings_raw, recent = await asyncio.gather(
+                bzzoiro.get_standings(),
+                bzzoiro.get_events(team_id=team_id, status="finished"),
+            )
+        except Exception as e:
+            logger.warning(f"bzzoiro team form fetch failed for {team_id}: {e}")
+            return (
+                f"[API_UNAVAILABLE: WC 2026 team stats for {team}] "
+                f"Use your own knowledge to describe {team}'s recent international form."
+            )
+
+        standing = bzz_standing_row_for_team(standings_raw, team_id)
+        recent.sort(key=lambda e: e.get("event_date", ""), reverse=True)
+        profile = parse_bzz_team_form(standing, recent, team_id, last_n)
+        if not standing and not recent:
+            return (
+                f"No data available for {team} in the World Cup yet. "
+                "The tournament may not have started."
+            )
+        result = _format_bzz_team_form(profile, last_n)
+        cache.set("form", result, team_id=team_id, last_n=last_n)
+        return result
 
     try:
         data = await api_football.get_team_stats(team_id)

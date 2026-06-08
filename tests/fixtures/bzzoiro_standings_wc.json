@@ -1,0 +1,76 @@
+{
+  "league_id": 27,
+  "grouped": true,
+  "groups": {
+    "D": [
+      {
+        "position": 1,
+        "team_id": 463,
+        "team_name": "Brazil",
+        "played": 3,
+        "won": 3,
+        "drawn": 0,
+        "lost": 0,
+        "gf": 8,
+        "ga": 3,
+        "gd": 5,
+        "pts": 9,
+        "xgf": 6.2,
+        "xga": 2.1,
+        "xgd": 4.1,
+        "form": "WWW"
+      },
+      {
+        "position": 2,
+        "team_id": 493,
+        "team_name": "England",
+        "played": 3,
+        "won": 2,
+        "drawn": 0,
+        "lost": 1,
+        "gf": 5,
+        "ga": 3,
+        "gd": 2,
+        "pts": 6,
+        "xgf": 4.0,
+        "xga": 2.5,
+        "xgd": 1.5,
+        "form": "WLW"
+      },
+      {
+        "position": 3,
+        "team_id": 498,
+        "team_name": "Colombia",
+        "played": 3,
+        "won": 1,
+        "drawn": 0,
+        "lost": 2,
+        "gf": 3,
+        "ga": 4,
+        "gd": -1,
+        "pts": 3,
+        "xgf": 2.8,
+        "xga": 3.5,
+        "xgd": -0.7,
+        "form": "LWL"
+      },
+      {
+        "position": 4,
+        "team_id": 480,
+        "team_name": "Uruguay",
+        "played": 3,
+        "won": 0,
+        "drawn": 0,
+        "lost": 3,
+        "gf": 1,
+        "ga": 7,
+        "gd": -6,
+        "pts": 0,
+        "xgf": 1.2,
+        "xga": 5.0,
+        "xgd": -3.8,
+        "form": "LLL"
+      }
+    ]
+  }
+}
