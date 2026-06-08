@@ -20,7 +20,7 @@ def test_bumped_cache_keys_ignore_stale_entries():
 
     assert cache.get("form", team_id=team_id, source="full_analysis_v3") is None
     assert cache.get("form", team_id=team_id, top_n=5, source="csv_v4") is None
-    assert cache.get("standings", group="A", source="overview_v3") is None
+    assert cache.get("standings", group="A", source="overview_v4") is None
 
 
 def test_cache_clear_wipes_all_buckets():

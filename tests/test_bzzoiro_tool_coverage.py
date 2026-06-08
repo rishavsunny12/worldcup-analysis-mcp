@@ -30,6 +30,7 @@ BZZ_SQUAD_TOOLS = {
 # Live tournament tools (bzzoiro live API when LIVE_DATA_SOURCE=bzzoiro)
 LIVE_BZZOIRO_TOOLS = {
     "get_today_matches",
+    "get_fixtures_range",
     "get_live_match",
     "get_team_form",
     "get_h2h",
