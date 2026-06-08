@@ -8,7 +8,9 @@ load_dotenv()
 class Settings:
     API_FOOTBALL_KEY: str = os.getenv("API_FOOTBALL_KEY", "")
     FOOTBALL_DATA_KEY: str = os.getenv("FOOTBALL_DATA_KEY", "")
+    BZZOIRO_KEY: str = os.getenv("BZZOIRO_KEY", "")
     TIER: str = os.getenv("API_FOOTBALL_TIER", "free")
+    LIVE_DATA_SOURCE: str = os.getenv("LIVE_DATA_SOURCE", "bzzoiro")
     CACHE_TTL_LIVE: int = int(os.getenv("CACHE_TTL_LIVE", 30))
     CACHE_TTL_LINEUPS: int = int(os.getenv("CACHE_TTL_LINEUPS", 300))
     CACHE_TTL_FORM: int = int(os.getenv("CACHE_TTL_FORM", 3600))
@@ -21,6 +23,13 @@ class Settings:
 
 
 settings = Settings()
+
+WORLD_CUP_LEAGUE_ID = 27
+
+
+def uses_bzzoiro_live() -> bool:
+    """True when in-tournament live tools route to bzzoiro instead of legacy APIs."""
+    return settings.LIVE_DATA_SOURCE.lower() == "bzzoiro"
 
 # IDs are football-data.org IDs (free tier during dev).
 # When switching to API_FOOTBALL_TIER=paid, replace with api-sports.io IDs

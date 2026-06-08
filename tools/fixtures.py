@@ -1,10 +1,13 @@
+import asyncio
 import logging
-from datetime import date, timezone, datetime
+from datetime import date
 
 from cache.cache_manager import cache
 from clients.api_football import api_football
+from clients.bzzoiro import bzzoiro
 from clients.football_data import football_data
-from config import settings
+from config import settings, uses_bzzoiro_live
+from tools.bzzoiro_parsers import parse_bzzoiro_fixtures
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +108,13 @@ async def get_today_matches() -> str:
         return cached
 
     try:
-        if settings.TIER == "free":
+        if uses_bzzoiro_live():
+            today_events, live_events = await asyncio.gather(
+                bzzoiro.get_events_today(),
+                bzzoiro.get_live_events(),
+            )
+            live, upcoming, finished = parse_bzzoiro_fixtures(today_events, live_events)
+        elif settings.TIER == "free":
             raw = await football_data.get_matches()
             live, upcoming, finished = _parse_football_data_fixtures(raw)
         else:

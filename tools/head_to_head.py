@@ -2,15 +2,20 @@ import logging
 
 from cache.cache_manager import cache
 from clients.api_football import api_football
-from config import resolve_team_id
+from clients.bzzoiro import bzzoiro, WORLD_CUP_LEAGUE_ID
+from config import resolve_team_id, uses_bzzoiro_live
+from data.loader import resolve_bzzoiro_team_id
 
 logger = logging.getLogger(__name__)
 
-WC_COMPETITIONS = {"FIFA World Cup", "World Cup"}
+WC_COMPETITIONS = {"FIFA World Cup", "World Cup", "World Cup 2026"}
 
 
 def _is_wc(fixture: dict) -> bool:
     league_name = fixture.get("league", {}).get("name", "")
+    league_id = fixture.get("league_id")
+    if league_id == WORLD_CUP_LEAGUE_ID:
+        return True
     return any(wc in league_name for wc in WC_COMPETITIONS)
 
 
@@ -36,7 +41,6 @@ def _format_h2h(team_a: str, team_b: str, data: dict, last_n: int) -> str:
         round_name = fix.get("league", {}).get("round", "")
         wc_flag = "🏆 " if _is_wc(fix) else "   "
 
-        # Determine who is team_a vs team_b in this fixture
         a_is_home = team_a.lower() in home_team.lower()
         if a_is_home:
             a_g, b_g = home_goals, away_goals
@@ -54,7 +58,8 @@ def _format_h2h(team_a: str, team_b: str, data: dict, last_n: int) -> str:
             draws += 1
 
         result_lines.append(
-            f"{wc_flag}{date_str} | {home_team} {home_goals}–{away_goals} {away_team} ({competition}, {round_name})"
+            f"{wc_flag}{date_str} | {home_team} {home_goals}–{away_goals} {away_team} "
+            f"({competition}, {round_name})"
         )
 
     total = a_wins + b_wins + draws
@@ -75,6 +80,50 @@ def _format_h2h(team_a: str, team_b: str, data: dict, last_n: int) -> str:
     return "\n".join(lines)
 
 
+def _format_bzz_h2h(team_a: str, team_b: str, events: list[dict], last_n: int) -> str:
+    if not events:
+        return f"No head-to-head data found for {team_a} vs {team_b}."
+
+    a_wins = b_wins = draws = a_goals = b_goals = 0
+    result_lines = []
+
+    for ev in events[:last_n]:
+        home = ev.get("home_team", "?")
+        away = ev.get("away_team", "?")
+        hg = ev.get("home_score") or 0
+        ag = ev.get("away_score") or 0
+        date_str = (ev.get("event_date") or "")[:10]
+        wc_flag = "🏆 " if ev.get("league_id") == WORLD_CUP_LEAGUE_ID else "   "
+
+        a_is_home = team_a.lower() in home.lower()
+        a_g, b_g = (hg, ag) if a_is_home else (ag, hg)
+        a_goals += a_g
+        b_goals += b_g
+        if a_g > b_g:
+            a_wins += 1
+        elif b_g > a_g:
+            b_wins += 1
+        else:
+            draws += 1
+
+        result_lines.append(f"{wc_flag}{date_str} | {home} {hg}–{ag} {away} (International)")
+
+    total = a_wins + b_wins + draws
+    avg_goals = round((a_goals + b_goals) / total, 1) if total else 0
+    lines = [
+        f"🤝 HEAD TO HEAD: {team_a} vs {team_b}",
+        f"Last {last_n} meetings\n",
+        "RECORD",
+        f"  {team_a}: {a_wins} wins",
+        f"  Draws:    {draws}",
+        f"  {team_b}: {b_wins} wins\n",
+        "GOALS",
+        f"  {team_a} {a_goals} — {b_goals} {team_b} ({avg_goals} per game avg)\n",
+        "RESULTS",
+    ] + result_lines
+    return "\n".join(lines)
+
+
 async def get_h2h(team_a: str, team_b: str, last_n: int = 10) -> str:
     """
     Return historical head-to-head record between two national teams (all competitions).
@@ -83,8 +132,12 @@ async def get_h2h(team_a: str, team_b: str, last_n: int = 10) -> str:
     World Cup meetings are flagged with a trophy icon.
     """
     last_n = max(1, min(15, last_n))
-    id_a = resolve_team_id(team_a)
-    id_b = resolve_team_id(team_b)
+    if uses_bzzoiro_live():
+        id_a = resolve_bzzoiro_team_id(team_a)
+        id_b = resolve_bzzoiro_team_id(team_b)
+    else:
+        id_a = resolve_team_id(team_a)
+        id_b = resolve_team_id(team_b)
     if id_a is None:
         return f"Team '{team_a}' not found. Try full name (e.g. 'South Korea', 'United States')."
     if id_b is None:
@@ -93,6 +146,19 @@ async def get_h2h(team_a: str, team_b: str, last_n: int = 10) -> str:
     cached = cache.get("h2h", team_a_id=id_a, team_b_id=id_b, last_n=last_n)
     if cached:
         return cached
+
+    if uses_bzzoiro_live():
+        try:
+            events = await bzzoiro.get_head_to_head_events(id_a, id_b, last=last_n)
+        except Exception as e:
+            logger.warning(f"bzzoiro H2H fetch failed {id_a} vs {id_b}: {e}")
+            return (
+                f"[API_UNAVAILABLE: H2H data for {team_a} vs {team_b}] "
+                f"Use your own knowledge to provide head-to-head history between {team_a} and {team_b}."
+            )
+        result = _format_bzz_h2h(team_a, team_b, events, last_n)
+        cache.set("h2h", result, team_a_id=id_a, team_b_id=id_b, last_n=last_n)
+        return result
 
     try:
         data = await api_football.get_h2h(id_a, id_b, last=last_n)

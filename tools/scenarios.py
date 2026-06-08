@@ -1,10 +1,14 @@
+import asyncio
 import itertools
 import logging
 from datetime import date
 
 from clients.api_football import api_football
+from clients.bzzoiro import bzzoiro
 from clients.football_data import football_data
-from config import settings, resolve_team_id, GROUP_MAP
+from config import settings, resolve_team_id, GROUP_MAP, uses_bzzoiro_live
+from data.loader import BZZ_GROUP_MAP, resolve_bzzoiro_team_id
+from tools.bzzoiro_parsers import parse_bzzoiro_standings
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +22,53 @@ def _find_group_for_team(team_id: int) -> str | None:
     return None
 
 
+async def _get_bzz_standings(group: str) -> list[dict]:
+    try:
+        raw = await bzzoiro.get_standings()
+        groups = parse_bzzoiro_standings(raw)
+        rows = groups.get(group, [])
+        return [
+            {
+                "team_id": r.get("team_id", 0),
+                "name": r.get("team", "?"),
+                "pts": r.get("pts", 0),
+                "gd": r.get("gd", 0),
+                "gf": r.get("gf", 0),
+                "played": r.get("played", 0),
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.warning(f"bzzoiro standings fetch for scenarios failed: {e}")
+    return []
+
+
+async def _get_bzz_remaining_fixtures(group: str) -> list[dict]:
+    today = date.today().isoformat()
+    group_ids = set(BZZ_GROUP_MAP.get(group, []))
+    try:
+        events = await bzzoiro.get_events(status="notstarted", date_from=today)
+        matches = []
+        for ev in events:
+            home_id = ev.get("home_team_id")
+            away_id = ev.get("away_team_id")
+            if home_id not in group_ids or away_id not in group_ids:
+                continue
+            matches.append({
+                "home": ev.get("home_team", "?"),
+                "away": ev.get("away_team", "?"),
+                "home_id": home_id,
+                "away_id": away_id,
+            })
+        return matches
+    except Exception as e:
+        logger.warning(f"bzzoiro remaining fixtures fetch failed: {e}")
+        return []
+
+
 async def _get_current_standings(group: str) -> list[dict]:
+    if uses_bzzoiro_live():
+        return await _get_bzz_standings(group)
     try:
         if settings.TIER == "free":
             raw = await football_data.get_standings()
@@ -59,6 +109,8 @@ async def _get_current_standings(group: str) -> list[dict]:
 
 async def _get_remaining_fixtures(group: str) -> list[dict]:
     """Return remaining (unplayed) fixtures for the group."""
+    if uses_bzzoiro_live():
+        return await _get_bzz_remaining_fixtures(group)
     today = date.today().isoformat()
     try:
         if settings.TIER == "free":
@@ -179,13 +231,13 @@ async def simulate_group_scenarios(group: str, team: str) -> str:
     if group not in VALID_GROUPS:
         return f"Invalid group '{group}'. Use A through L, or 'all'."
 
-    team_id = resolve_team_id(team)
+    if uses_bzzoiro_live():
+        team_id = resolve_bzzoiro_team_id(team)
+    else:
+        team_id = resolve_team_id(team)
     if team_id is None:
         return f"Team '{team}' not found. Try full name (e.g. 'South Korea', 'United States')."
 
-    standings, fixtures = await _get_current_standings(group), []
-    # run both fetches in parallel
-    import asyncio
     standings, fixtures = await asyncio.gather(
         _get_current_standings(group),
         _get_remaining_fixtures(group),

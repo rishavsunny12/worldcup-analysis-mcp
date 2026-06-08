@@ -23,10 +23,12 @@ async def test_get_team_form_invalid_team():
 
 @pytest.mark.asyncio
 async def test_get_team_form_happy_path():
-    raw = load_fixture("api_football_team_stats_brazil.json")
-    with patch("tools.team.api_football") as mock_api, \
+    bundle = load_fixture("bzzoiro_team_stats_brazil.json")
+    with patch("tools.team.uses_bzzoiro_live", return_value=True), \
+         patch("tools.team.bzzoiro") as mock_bzz, \
          patch("tools.team.cache") as mock_cache:
-        mock_api.get_team_stats = AsyncMock(return_value=raw)
+        mock_bzz.get_standings = AsyncMock(return_value=bundle)
+        mock_bzz.get_events = AsyncMock(return_value=bundle["events"])
         mock_cache.get.return_value = None
         mock_cache.set = lambda *a, **kw: None
 
@@ -48,12 +50,13 @@ async def test_get_team_form_cache_hit():
 
 @pytest.mark.asyncio
 async def test_get_team_form_last_n_clamped():
-    raw = load_fixture("api_football_team_stats_brazil.json")
-    with patch("tools.team.api_football") as mock_api, \
+    bundle = load_fixture("bzzoiro_team_stats_brazil.json")
+    with patch("tools.team.uses_bzzoiro_live", return_value=True), \
+         patch("tools.team.bzzoiro") as mock_bzz, \
          patch("tools.team.cache") as mock_cache:
-        mock_api.get_team_stats = AsyncMock(return_value=raw)
+        mock_bzz.get_standings = AsyncMock(return_value=bundle)
+        mock_bzz.get_events = AsyncMock(return_value=bundle["events"])
         mock_cache.get.return_value = None
         mock_cache.set = lambda *a, **kw: None
-        # 99 should be clamped to 10 — should not raise
         result = await get_team_form("brazil", last_n=99)
     assert "BRAZIL" in result.upper()

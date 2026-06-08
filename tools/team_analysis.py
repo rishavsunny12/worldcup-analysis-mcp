@@ -123,11 +123,12 @@ def _build_csv_profile(squad_names: list[str], bzz_squad: list[dict] | None = No
     total_npxg    = 0.0
     bzzoiro_count = 0
 
-    # Decide which names to iterate: API names or bzzoiro squad names
-    if squad_names:
+    # Prefer bzzoiro roster when available — complete coverage for all 48 nations.
+    # API squad names (football-data) often omit players or use different spellings.
+    if bzz_squad:
+        names_to_check = [p.get("player_name", "") for p in bzz_squad if p.get("player_name")]
+    elif squad_names:
         names_to_check = squad_names
-    elif bzz_squad:
-        names_to_check = [p.get("player_name", "") for p in bzz_squad]
     else:
         names_to_check = []
 
