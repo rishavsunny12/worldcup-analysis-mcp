@@ -18,6 +18,7 @@ class Settings:
     CACHE_TTL_STANDINGS: int = int(os.getenv("CACHE_TTL_STANDINGS", 300))
     CACHE_TTL_H2H: int = int(os.getenv("CACHE_TTL_H2H", 3600))
     CACHE_TTL_SCORERS: int = int(os.getenv("CACHE_TTL_SCORERS", 300))
+    CACHE_BUST: bool = os.getenv("CACHE_BUST", "").lower() in ("1", "true", "yes")
     BASE_URL: str = os.getenv("BASE_URL", "")
     OAUTH_DB_PATH: str = os.getenv("OAUTH_DB_PATH", "")
 

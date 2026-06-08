@@ -38,3 +38,12 @@ Set these in Railway **Variables**:
 | `LIVE_DATA_SOURCE` | Optional (`bzzoiro` default — live scores, standings, form; set `legacy` for API-Football / football-data.org) |
 | `API_FOOTBALL_TIER` | Yes (`free` or `paid`; used only when `LIVE_DATA_SOURCE=legacy` or `get_match_preview`) |
 | `OAUTH_DB_PATH` | Recommended (`/data/oauth.db`) |
+| `CACHE_BUST` | Optional — set `1` on one deploy to wipe in-memory tool caches at startup |
+
+## Cache and redeploys
+
+Squad analysis tools cache formatted output in **process memory** (default TTL: 1 hour for form tools, 5 minutes for group overview). A redeploy restarts the process and clears cache automatically.
+
+If you deploy code without restarting (e.g. local MCP subprocess still running), restart the MCP server or set `CACHE_BUST=1` once, redeploy, then remove the variable.
+
+After squad-logic changes, bump cache `source` keys in code or restart the service before re-testing.

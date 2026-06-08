@@ -211,7 +211,7 @@ async def analyze_team_for_worldcup(team: str) -> str:
     if team_id is None:
         return f"Team '{team}' not found. Try full name (e.g. 'South Korea', 'United States')."
 
-    cached = cache.get("form", team_id=team_id, source="full_analysis_v2")
+    cached = cache.get("form", team_id=team_id, source="full_analysis_v3")
     if cached:
         return cached
 
@@ -396,5 +396,5 @@ async def analyze_team_for_worldcup(team: str) -> str:
 
     lines.append(f"\n{sep}")
     result = "\n".join(lines)
-    cache.set("form", result, team_id=team_id, source="full_analysis_v2")
+    cache.set("form", result, team_id=team_id, source="full_analysis_v3")
     return result

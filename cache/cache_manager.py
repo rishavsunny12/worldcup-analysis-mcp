@@ -42,8 +42,20 @@ class CacheManager:
         key = self._key(**kwargs)
         self._caches[cache_name][key] = value
 
+    def clear(self, cache_name: str | None = None) -> None:
+        """Clear one cache bucket or all in-memory TTL caches."""
+        if cache_name:
+            self._caches[cache_name].clear()
+        else:
+            for bucket in self._caches.values():
+                bucket.clear()
+
     def stats(self) -> dict:
         return {k: {"hits": self._hits[k], "misses": self._misses[k]} for k in self._caches}
 
 
 cache = CacheManager()
+
+if settings.CACHE_BUST:
+    cache.clear()
+    logger.info("CACHE_BUST=1: all in-memory caches cleared at startup")

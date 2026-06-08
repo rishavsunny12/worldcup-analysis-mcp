@@ -211,7 +211,7 @@ async def get_nation_top_performers(team: str, top_n: int = 5) -> str:
     if team_id is None:
         return f"Team '{team}' not found. Try full name (e.g. 'South Korea', 'United States')."
 
-    cached = cache.get("form", team_id=team_id, top_n=top_n, source="csv_v2")
+    cached = cache.get("form", team_id=team_id, top_n=top_n, source="csv_v4")
     if cached:
         return cached
 
@@ -276,7 +276,7 @@ async def get_nation_top_performers(team: str, top_n: int = 5) -> str:
         lines.append(f"\nℹ️  Adj. xG = raw xG × quality factor. 20 xG in ★ leagues ≠ 20 xG in ★★★★★.")
 
     result = "\n".join(lines)
-    cache.set("form", result, team_id=team_id, top_n=top_n, source="csv_v3")
+    cache.set("form", result, team_id=team_id, top_n=top_n, source="csv_v4")
     return result
 
 
