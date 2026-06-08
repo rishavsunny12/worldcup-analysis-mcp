@@ -190,7 +190,13 @@ async def get_group_overview(group: str) -> str:
         top = _top_attacker(csv_prof)
         profiles.append((name, csv_prof, top))
 
-    profiles.sort(key=lambda x: x[1]["pedigree_score"], reverse=True)
+    profiles.sort(
+        key=lambda x: (
+            x[1]["pedigree_score"] if x[1]["pedigree_score"] is not None else 0.0,
+            x[1]["proj_gpg"],
+        ),
+        reverse=True,
+    )
 
     sep = "━" * 54
     lines = [
@@ -217,7 +223,7 @@ async def get_group_overview(group: str) -> str:
     predicted = " › ".join(p[0] for p in profiles)
     lines += [
         f"{sep}",
-        f"📌 Predicted finish order (by squad pedigree): {predicted}",
+        f"📌 Predicted finish order (pedigree, then proj. goals/game tiebreak): {predicted}",
     ]
 
     result = "\n".join(lines)

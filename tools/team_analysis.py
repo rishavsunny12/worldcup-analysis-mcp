@@ -6,7 +6,7 @@ from clients.api_football import api_football
 from clients.football_data import football_data
 from config import resolve_team_id
 from data.loader import (
-    LEAGUE_FILES, find_player, get_adj_xg,
+    LEAGUE_FILES, find_player_for_squad, get_adj_xg,
     get_bzzoiro_squad, get_bzzoiro_team, normalize_bzz_player,
     defensive_profile_from_squad,
 )
@@ -133,7 +133,16 @@ def _build_csv_profile(squad_names: list[str], bzz_squad: list[dict] | None = No
         names_to_check = []
 
     for name in names_to_check:
-        rows = find_player(name)
+        key = name.lower().strip()
+        bzz_row = bzz_by_name.get(key)
+        if not bzz_row and bzz_squad:
+            bzz_row = next(
+                (p for p in bzz_squad
+                 if key in (p.get("player_name") or "").lower()
+                 or (p.get("player_name") or "").lower() in key),
+                None,
+            )
+        rows = find_player_for_squad(name, bzz_row)
         if rows:
             best = max(rows, key=lambda r: _safe_float(r.get("npxG")))
             league = best.get("league", "")
@@ -143,17 +152,6 @@ def _build_csv_profile(squad_names: list[str], bzz_squad: list[dict] | None = No
             total_npxg    += _safe_float(best.get("npxG"))
             total_xgchain += _safe_float(best.get("xGChain"))
         else:
-            # Understat miss — fall back to bzzoiro
-            key = name.lower().strip()
-            bzz_row = bzz_by_name.get(key)
-            if not bzz_row and bzz_squad:
-                # loose name match
-                bzz_row = next(
-                    (p for p in bzz_squad
-                     if key in (p.get("player_name") or "").lower()
-                     or (p.get("player_name") or "").lower() in key),
-                    None,
-                )
             if bzz_row:
                 norm = normalize_bzz_player(bzz_row)
                 league = norm.get("league", "")
@@ -325,7 +323,7 @@ async def analyze_team_for_worldcup(team: str) -> str:
         if p.get("_source") == "bzzoiro":
             bzz = p.get("_bzz", {})
             club   = bzz.get("club_name", club)
-            lg     = bzz.get("club_league_name", "—")
+            lg     = p.get("_raw_league") or bzz.get("club_league_name", "—")
         else:
             lg = LEAGUE_DISPLAY.get(p.get("league", ""), "—")
         xg    = _safe_float(p.get("npxG"))

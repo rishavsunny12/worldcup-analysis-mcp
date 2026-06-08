@@ -5,10 +5,11 @@ from cache.cache_manager import cache
 from config import resolve_team_id
 from data.loader import (
     ALL_PLAYERS, BZZ_ALL_PLAYERS, BZZ_LEAGUE_MAP, LEAGUE_FILES,
-    defensive_profile_from_squad, find_bzzoiro_player, find_player, get_adj_xg,
-    get_bzzoiro_squad, get_league_quality, normalize_bzz_player, parse_attr_defending,
-    parse_int_field, quality_label,
+    defensive_profile_from_squad, find_bzzoiro_player, find_player_for_squad,
+    get_adj_xg, get_bzzoiro_squad, get_league_quality, normalize_bzz_player,
+    parse_attr_defending, parse_int_field, quality_label, resolve_club_league_name,
 )
+from tools.team_analysis import LEAGUE_DISPLAY as TA_LEAGUE_DISPLAY, _bar, _build_csv_profile
 
 logger = logging.getLogger(__name__)
 
@@ -223,7 +224,7 @@ async def get_nation_top_performers(team: str, top_n: int = 5) -> str:
     bzzoiro_count = 0
 
     for bzz_row in bzz_squad:
-        understat_rows = find_player(bzz_row.get("player_name", ""))
+        understat_rows = find_player_for_squad(bzz_row.get("player_name", ""), bzz_row)
         if understat_rows:
             best = max(understat_rows, key=lambda r: _safe_float(r.get("npxG")))
             matched.append(best)
@@ -327,29 +328,30 @@ async def get_squad_league_breakdown(team: str) -> str:
     if not bzz_squad:
         return f"No squad data found for '{team}'."
 
-    top6_counts: dict[str, int] = {k: 0 for k in LEAGUE_FILES}
+    csv = _build_csv_profile([], bzz_squad)
+    total = csv["total_squad"]
+    top6_total = csv["found"]
+    top6_pct = round(top6_total / total * 100) if total else 0
+    ped_display = (
+        f"{csv['pedigree_score']:.0%}" if csv["pedigree_score"] is not None else "N/A"
+    )
+
     other_leagues: Counter = Counter()
-    total = len(bzz_squad)
-
     for p in bzz_squad:
-        raw_league = p.get("club_league_name", "") or ""
-        understat_key = BZZ_LEAGUE_MAP.get(raw_league, "")
-        if understat_key:
-            top6_counts[understat_key] += 1
-        else:
-            other_leagues[raw_league or "Unknown"] += 1
-
-    top6_total = sum(top6_counts.values())
-    top6_pct   = round(top6_total / total * 100) if total else 0
+        resolved = resolve_club_league_name(p)
+        understat_key = BZZ_LEAGUE_MAP.get(resolved, "")
+        if not understat_key:
+            other_leagues[resolved] += 1
 
     lines = [
         f"🏟️ SQUAD LEAGUE BREAKDOWN — {team.upper()}",
-        f"2025-26 season | {total} players total\n",
-        f"  TOP-6 EUROPEAN LEAGUES  ({top6_total} players, {top6_pct}%)",
+        f"2025-26 club season | {total} official squad players\n",
+        f"  TOP-6 EUROPEAN LEAGUES  ({top6_total} players, {top6_pct}% of squad)",
+        f"  Pedigree score: {ped_display} (same formula as analyze_team_for_worldcup)\n",
     ]
 
-    for league_key, display in LEAGUE_DISPLAY.items():
-        count = top6_counts.get(league_key, 0)
+    for league_key, display in TA_LEAGUE_DISPLAY.items():
+        count = csv["league_counts"].get(league_key, 0)
         if count == 0:
             continue
         pct = round(count / total * 100)
@@ -357,15 +359,19 @@ async def get_squad_league_breakdown(team: str) -> str:
 
     if other_leagues:
         lines.append(f"\n  OTHER LEAGUES  ({sum(other_leagues.values())} players)")
-        for league_name, count in other_leagues.most_common(10):
+        for league_name, count in other_leagues.most_common(12):
             pct = round(count / total * 100)
             lines.append(f"    {league_name:<28} {count:>2} players  {pct}%")
 
+    top6_key = max(csv["league_counts"], key=lambda k: csv["league_counts"][k])
     top_league_name = (
-        LEAGUE_DISPLAY.get(max(top6_counts, key=lambda k: top6_counts[k]), "")
-        if top6_total else (other_leagues.most_common(1)[0][0] if other_leagues else "—")
+        TA_LEAGUE_DISPLAY.get(top6_key, "")
+        if csv["league_counts"].get(top6_key, 0) > 0
+        else (other_leagues.most_common(1)[0][0] if other_leagues else "—")
     )
-    lines.append(f"\n🏆 Top league: {top_league_name} | Top-6 coverage: {top6_pct}%")
+    lines.append(
+        f"\n🏆 Top league: {top_league_name} | Top-6 players: {top6_total} ({top6_pct}%)"
+    )
 
     return "\n".join(lines)
 
