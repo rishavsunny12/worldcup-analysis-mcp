@@ -10,7 +10,13 @@ from tools.head_to_head import get_h2h
 from tools.match import get_live_match, get_match_preview
 from tools.players import get_top_scorers
 from tools.scenarios import simulate_group_scenarios
-from tools.squad_analysis import get_nation_top_performers, get_player_club_stats, get_squad_league_breakdown, search_players
+from tools.squad_analysis import (
+    get_nation_top_defenders,
+    get_nation_top_performers,
+    get_player_club_stats,
+    get_squad_league_breakdown,
+    search_players,
+)
 from tools.team_analysis import analyze_team_for_worldcup
 from tools.standings import get_group_overview, get_group_standings
 from tools.team import get_team_form
@@ -29,6 +35,7 @@ TOOLS = [
     simulate_group_scenarios,
     get_player_club_stats,
     get_nation_top_performers,
+    get_nation_top_defenders,
     get_squad_league_breakdown,
     analyze_team_for_worldcup,
     compare_teams_for_worldcup,
@@ -54,7 +61,8 @@ Available tools:
 - simulate_group_scenarios → what a team needs to qualify from their group
 - get_group_overview      → full Group X preview: standings + all 4 team profiles + predicted order
 - get_tournament_favorites → power rankings of all 48 teams by squad strength
-- search_players          → search 2025-26 club stats by name, position, league, or xG threshold
+- get_nation_top_defenders → top DF/GK ranked by bzzoiro defending attribute
+- search_players          → search 2025-26 club stats by name, position, league, xG, or defending rating
 
 ALWAYS call a tool before answering any question about:
 - current standings, points, or group positions
