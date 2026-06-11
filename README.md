@@ -306,4 +306,4 @@ Once connected, try:
 
 ## License
 
-MIT — see [LICENSE](LICENSE) if present, or add your preferred license before publishing.
+MIT
