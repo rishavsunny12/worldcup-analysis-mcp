@@ -270,8 +270,12 @@ async def get_today_matches() -> str:
     Returns matches bucketed into LIVE, UPCOMING, and FINISHED with scores and venues.
     """
     today = date.today().isoformat()
-
-    cached = cache.get("fixtures", date=today)
+    # Use the live cache bucket when games are in play (30s TTL); otherwise fixtures (24h).
+    # get/set must use the same bucket — a prior bug stored live days under "live" but
+    # always read from "fixtures", so every request missed cache during matches.
+    cached = cache.get("live", date=today, source="today_matches") or cache.get(
+        "fixtures", date=today
+    )
     if cached:
         return cached
 
@@ -301,8 +305,10 @@ async def get_today_matches() -> str:
 
     result = _format_fixtures(live, upcoming, finished)
 
-    ttl_key = "live" if live else "fixtures"
-    cache.set(ttl_key, result, date=today)
+    if live:
+        cache.set("live", result, date=today, source="today_matches")
+    else:
+        cache.set("fixtures", result, date=today)
     return result
 
 

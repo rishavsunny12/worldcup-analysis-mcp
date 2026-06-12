@@ -64,7 +64,12 @@ Available tools:
 - simulate_group_scenarios → what a team needs to qualify from their group
 - get_group_overview      → full Group X preview: standings + all 4 team profiles + predicted order
 - get_tournament_favorites → power rankings of all 48 teams by squad strength
+- analyze_team_for_worldcup → full squad analysis: pedigree, top performers, league breakdown, proj goals
+- compare_teams_for_worldcup → side-by-side squad comparison of two nations
+- get_player_club_stats   → one player's 2025-26 club xG, goals, and league
+- get_nation_top_performers → top attackers for a nation by adjusted xG
 - get_nation_top_defenders → top DF/GK ranked by bzzoiro defending attribute
+- get_squad_league_breakdown → where a nation's squad players play club football (by league)
 - search_players          → search 2025-26 club stats by name, position, league, xG, or defending rating
 
 ALWAYS call a tool before answering any question about:
