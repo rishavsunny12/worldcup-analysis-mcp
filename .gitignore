@@ -28,3 +28,10 @@ build/
 
 # claude code local settings
 .claude/
+generate_architecture_pdf.py
+README.md
+docs/REDDIT.md
+docs/worldcup-analysis-mcp-architecture.pdf
+tests/test_bzzoiro_live_tools.py
+generate_architecture_pdf.py
+tests/test_bzzoiro_live_tools.py

@@ -1,0 +1,64 @@
+{
+  "league_id": 27,
+  "grouped": true,
+  "groups": {
+    "Group A": [
+      {
+        "position": 1,
+        "team_id": 451,
+        "team_name": "Mexico",
+        "played": 0,
+        "won": 0,
+        "drawn": 0,
+        "lost": 0,
+        "gf": 0,
+        "ga": 0,
+        "gd": 0,
+        "pts": 0,
+        "form": ""
+      },
+      {
+        "position": 2,
+        "team_id": 930,
+        "team_name": "Czechia",
+        "played": 0,
+        "won": 0,
+        "drawn": 0,
+        "lost": 0,
+        "gf": 0,
+        "ga": 0,
+        "gd": 0,
+        "pts": 0,
+        "form": ""
+      },
+      {
+        "position": 3,
+        "team_id": 452,
+        "team_name": "South Africa",
+        "played": 0,
+        "won": 0,
+        "drawn": 0,
+        "lost": 0,
+        "gf": 0,
+        "ga": 0,
+        "gd": 0,
+        "pts": 0,
+        "form": ""
+      },
+      {
+        "position": 4,
+        "team_id": 453,
+        "team_name": "South Korea",
+        "played": 0,
+        "won": 0,
+        "drawn": 0,
+        "lost": 0,
+        "gf": 0,
+        "ga": 0,
+        "gd": 0,
+        "pts": 0,
+        "form": ""
+      }
+    ]
+  }
+}

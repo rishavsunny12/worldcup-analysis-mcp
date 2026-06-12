@@ -70,6 +70,26 @@ def parse_bzzoiro_fixtures(
     return live, upcoming, finished
 
 
+def normalize_group_letter(grp: str) -> str:
+    """Normalize bzzoiro / football-data group labels to a single letter A–L."""
+    s = str(grp).upper().strip()
+    s = s.replace("GROUP_", "").replace("GROUP ", "").strip()
+    if len(s) == 1 and s in "ABCDEFGHIJKL":
+        return s
+    return s
+
+
+def _row_group_letter(entry: dict) -> str:
+    """Extract group letter from a flat standings row, if present."""
+    for field in ("group", "group_name", "wc_group", "group_letter"):
+        raw = entry.get(field)
+        if raw:
+            letter = normalize_group_letter(str(raw))
+            if len(letter) == 1 and letter in "ABCDEFGHIJKL":
+                return letter
+    return ""
+
+
 def parse_bzzoiro_standings(data: dict) -> dict[str, list[dict]]:
     """Return {group_letter: [row_dict]} from bzzoiro standings payload."""
     groups: dict[str, list[dict]] = {}
@@ -94,13 +114,20 @@ def parse_bzzoiro_standings(data: dict) -> dict[str, list[dict]]:
 
     if data.get("grouped") and data.get("groups"):
         for grp, rows in data["groups"].items():
-            letter = str(grp).upper().strip()
-            groups[letter] = [_row(r) for r in rows]
+            letter = normalize_group_letter(str(grp))
+            if letter:
+                groups[letter] = [_row(r) for r in rows]
         return groups
 
     flat = data.get("standings", [])
     if flat:
-        groups["ALL"] = [_row(r) for r in flat]
+        for entry in flat:
+            letter = _row_group_letter(entry)
+            row = _row(entry)
+            if letter:
+                groups.setdefault(letter, []).append(row)
+            else:
+                groups.setdefault("ALL", []).append(row)
     return groups
 
 

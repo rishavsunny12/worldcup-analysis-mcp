@@ -18,6 +18,174 @@ def _safe_float(val) -> float:
         return 0.0
 
 
+def _bzz_stat_xg(side: dict) -> float:
+    """Extract live xG from bzzoiro stats (expected_goals when xg.actual is null)."""
+    xg_obj = side.get("xg")
+    if isinstance(xg_obj, dict) and xg_obj.get("actual") is not None:
+        return _safe_float(xg_obj["actual"])
+    for key in ("expected_goals", "expected_goals_non_penalty"):
+        raw = side.get(key)
+        if raw is not None and str(raw).strip() not in ("", "-"):
+            return _safe_float(raw)
+    if isinstance(xg_obj, (int, float, str)) and xg_obj is not None:
+        return _safe_float(xg_obj)
+    return 0.0
+
+
+def _bzz_stat_val(side: dict, *keys: str, default: str | int = "-"):
+    """First non-None stat value from bzzoiro (handles mixed key casing)."""
+    for key in keys:
+        val = side.get(key)
+        if val is not None:
+            return val
+    return default
+
+
+def _parse_stat_number(val) -> float:
+    """Parse a numeric stat from int, float, or string (strips trailing %)."""
+    if val is None or val == "-":
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).strip().rstrip("%")
+    return _safe_float(s)
+
+
+def _ascii_compare_bar(
+    label: str,
+    home_val,
+    away_val,
+    *,
+    width: int = 20,
+    is_xg: bool = False,
+) -> str:
+    """One row: label, dual-half bar (home left / away right), numeric values."""
+    home_f = _parse_stat_number(home_val)
+    away_f = _parse_stat_number(away_val)
+    half = width // 2
+
+    if is_xg:
+        scale = max(home_f, away_f, 0.01)
+        h_fill = round(home_f / scale * half)
+        a_fill = round(away_f / scale * half)
+        h_disp = f"{home_f:.2f}"
+        a_disp = f"{away_f:.2f}"
+    else:
+        scale = max(home_f, away_f, 1.0)
+        h_fill = round(home_f / scale * half)
+        a_fill = round(away_f / scale * half)
+        if label.lower() == "possession":
+            h_disp = f"{int(home_f)}%"
+            a_disp = f"{int(away_f)}%"
+        else:
+            h_disp = str(int(home_f)) if home_f == int(home_f) else str(home_f)
+            a_disp = str(int(away_f)) if away_f == int(away_f) else str(away_f)
+
+    bar = "█" * h_fill + "░" * (half - h_fill) + "█" * a_fill + "░" * (half - a_fill)
+    return f"  {label:<11} {bar}  {h_disp}  |  {a_disp}"
+
+
+def _bzz_incidents_list(incidents_data: dict) -> list:
+    incidents = incidents_data.get("incidents", incidents_data.get("results", []))
+    if isinstance(incidents, dict):
+        incidents = incidents.get("items", [])
+    return incidents if isinstance(incidents, list) else []
+
+
+def _bzz_goal_team_name(goal: dict, home: str, away: str) -> str:
+    team = goal.get("team_name") or goal.get("team")
+    if team:
+        return str(team)
+    if goal.get("is_home") is True:
+        return home
+    if goal.get("is_home") is False:
+        return away
+    return "?"
+
+
+def _format_goal_timeline(incidents: list, home: str, away: str) -> list[str]:
+    goals = [e for e in incidents if (e.get("type") or "").lower() == "goal"]
+    if not goals:
+        return []
+    goals = sorted(goals, key=lambda e: e.get("minute") or 0)
+    lines = ["\n⚽ GOAL TIMELINE"]
+    for g in goals:
+        min_ = g.get("minute", "?")
+        scorer = g.get("player_name") or g.get("player", "?")
+        team_name = _bzz_goal_team_name(g, home, away)
+        assist = (g.get("assist") or "").strip()
+        if assist.lower().startswith("assist by "):
+            assist = assist[10:].strip()
+        goal_type = (g.get("goal_type") or "").strip()
+        extra = ""
+        if assist:
+            extra = f" (assist: {assist})"
+        elif goal_type and goal_type.lower() not in ("regular", ""):
+            extra = f" ({goal_type})"
+        lines.append(f"  {min_}'  {team_name:<14} {scorer}{extra}")
+    return lines
+
+
+def _format_xg_timeline(
+    xg_per_minute: list,
+    home: str,
+    away: str,
+    current_minute: int | None = None,
+) -> list[str]:
+    if not xg_per_minute:
+        return []
+    rows = sorted(xg_per_minute, key=lambda r: r.get("m") or 0)
+    if len(rows) > 20:
+        keep_mins = {rows[-1].get("m")}
+        if current_minute is not None:
+            keep_mins.add(current_minute)
+        sampled = [r for r in rows if (r.get("m") or 0) % 5 == 0 or r.get("m") in keep_mins]
+        if rows[-1] not in sampled:
+            sampled.append(rows[-1])
+        sampled = sorted(sampled, key=lambda r: r.get("m") or 0)
+    else:
+        sampled = rows
+
+    home_col = home[:12]
+    away_col = away[:12]
+    lines = [
+        f"\n📈 xG TIMELINE (cumulative)",
+        f"  {'Min':<6} {home_col:>12}   {away_col:>12}",
+    ]
+    for r in sampled:
+        m = r.get("m", "?")
+        cum_h = _safe_float(r.get("cum_home", r.get("cum_xg_home")))
+        cum_a = _safe_float(r.get("cum_away", r.get("cum_xg_away")))
+        lines.append(f"  {m}'{'':<4} {cum_h:>12.2f}   {cum_a:>12.2f}")
+    return lines
+
+
+def _format_live_stats_bars(
+    home: str,
+    away: str,
+    xg_h,
+    xg_a,
+    shots_h,
+    shots_a,
+    on_h,
+    on_a,
+    pos_h,
+    pos_a,
+    corn_h,
+    corn_a,
+) -> list[str]:
+    lines = [f"\n📊 LIVE STATS (bars)     {home[:12]:<12} {away[:12]}"]
+    for label, hv, av, is_xg in (
+        ("xG", xg_h, xg_a, True),
+        ("Shots", shots_h, shots_a, False),
+        ("On target", on_h, on_a, False),
+        ("Possession", pos_h, pos_a, False),
+        ("Corners", corn_h, corn_a, False),
+    ):
+        lines.append(_ascii_compare_bar(label, hv, av, is_xg=is_xg))
+    return lines
+
+
 def _xg_label(diff: float) -> str:
     if diff > 0.8:
         return "dominant"
@@ -115,40 +283,35 @@ def _format_bzzoiro_live_match(
     side_stats = stats_data.get("stats", {})
     home_stats = side_stats.get("home", {})
     away_stats = side_stats.get("away", {})
-    xg_h = _safe_float((home_stats.get("xg") or {}).get("actual", home_stats.get("xg")))
-    xg_a = _safe_float((away_stats.get("xg") or {}).get("actual", away_stats.get("xg")))
-    shots_h = home_stats.get("total_shots", "-")
-    shots_a = away_stats.get("total_shots", "-")
-    on_h = home_stats.get("shots_on_target", home_stats.get("on_target", "-"))
-    on_a = away_stats.get("shots_on_target", away_stats.get("on_target", "-"))
-    pos_h = home_stats.get("ball_possession", "-")
-    pos_a = away_stats.get("ball_possession", "-")
+    xg_h = _bzz_stat_xg(home_stats)
+    xg_a = _bzz_stat_xg(away_stats)
+    shots_h = _bzz_stat_val(home_stats, "total_shots")
+    shots_a = _bzz_stat_val(away_stats, "total_shots")
+    on_h = _bzz_stat_val(home_stats, "shots_on_target", "ShotsOnTarget", "on_target")
+    on_a = _bzz_stat_val(away_stats, "shots_on_target", "ShotsOnTarget", "on_target")
+    pos_h = _bzz_stat_val(home_stats, "ball_possession", "BallPossesion", "BallPossession")
+    pos_a = _bzz_stat_val(away_stats, "ball_possession", "BallPossesion", "BallPossession")
     corn_h = home_stats.get("corners", home_stats.get("corner_kicks", "-"))
     corn_a = away_stats.get("corners", away_stats.get("corner_kicks", "-"))
 
-    incidents = incidents_data.get("incidents", incidents_data.get("results", []))
-    if isinstance(incidents, dict):
-        incidents = incidents.get("items", [])
-    goals_events = [e for e in incidents if (e.get("type") or "").lower() == "goal"]
+    incidents = _bzz_incidents_list(incidents_data)
     cards = [e for e in incidents if (e.get("type") or "").lower() == "card"]
     last_5 = sorted(incidents, key=lambda e: e.get("minute") or 0, reverse=True)[:5]
+    cur_min = minute if isinstance(minute, int) else None
 
     lines = [
         f"🔴 LIVE: {home} vs {away} | {minute}' | Group {group}\n",
         f"SCORE: {home} {score_h} — {score_a} {away}",
     ]
-    for g in goals_events:
-        scorer = g.get("player_name") or g.get("player", "?")
-        team_name = g.get("team_name") or g.get("team", "?")
-        min_ = g.get("minute", "?")
-        lines.append(f"  ⚽ {min_}' {scorer} [{team_name}]")
-
-    lines.append(f"\n📊 LIVE STATS          {home[:8]:<10} {away[:8]}")
-    lines.append(f"  xG:              {xg_h:<10} {xg_a}")
-    lines.append(f"  Shots:           {shots_h!s:<10} {shots_a}")
-    lines.append(f"  On Target:       {on_h!s:<10} {on_a}")
-    lines.append(f"  Possession:      {pos_h!s:<10} {pos_a}")
-    lines.append(f"  Corners:         {corn_h!s:<10} {corn_a}")
+    lines.extend(_format_goal_timeline(incidents, home, away))
+    lines.extend(
+        _format_live_stats_bars(
+            home, away, xg_h, xg_a, shots_h, shots_a, on_h, on_a, pos_h, pos_a, corn_h, corn_a
+        )
+    )
+    lines.extend(
+        _format_xg_timeline(stats_data.get("xg_per_minute") or [], home, away, cur_min)
+    )
 
     if cards:
         lines.append("\n🟨 CARDS")

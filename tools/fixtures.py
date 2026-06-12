@@ -1,18 +1,26 @@
 import asyncio
 import logging
-from datetime import date
+from datetime import date, datetime
 
 from cache.cache_manager import cache
 from clients.api_football import api_football
 from clients.bzzoiro import bzzoiro
 from clients.football_data import football_data
 from config import settings, uses_bzzoiro_live
+from data.loader import (
+    WC_TOURNAMENT_END,
+    WC_TOURNAMENT_START,
+    get_bzzoiro_fixtures_in_range,
+    get_bzzoiro_prediction_for_event,
+)
 from tools.bzzoiro_parsers import parse_bzzoiro_fixtures
 
 logger = logging.getLogger(__name__)
 
 LIVE_STATUSES = {"1H", "2H", "HT", "ET", "P", "LIVE"}
 FINISHED_STATUSES = {"FT", "AET", "PEN"}
+BZZ_FINISHED = {"finished", "ft", "aet", "pen"}
+BZZ_LIVE = {"inprogress", "live", "1h", "2h", "ht"}
 
 
 def _parse_api_football_fixtures(data: dict) -> tuple[list, list, list]:
@@ -94,6 +102,166 @@ def _format_fixtures(live: list, upcoming: list, finished: list) -> str:
     return "\n".join(lines)
 
 
+def _parse_iso_date(value: str) -> date | None:
+    try:
+        return datetime.strptime(value.strip()[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def _clamp_fixture_range(date_from: str, date_to: str) -> tuple[str, str] | str:
+    start = _parse_iso_date(date_from)
+    end = _parse_iso_date(date_to)
+    if start is None or end is None:
+        return "Invalid date format. Use YYYY-MM-DD (e.g. 2026-06-11)."
+    if end < start:
+        return "date_to must be on or after date_from."
+    wc_start = _parse_iso_date(WC_TOURNAMENT_START)
+    wc_end = _parse_iso_date(WC_TOURNAMENT_END)
+    if end < wc_start or start > wc_end:
+        return (
+            f"No World Cup 2026 fixtures outside {WC_TOURNAMENT_START} – {WC_TOURNAMENT_END}."
+        )
+    clamped_from = max(start, wc_start).isoformat()
+    clamped_to = min(end, wc_end).isoformat()
+    return clamped_from, clamped_to
+
+
+def _format_bzz_fixture_row(row: dict) -> tuple[str, str, str, str, str]:
+    """Return (sort_key, date_label, time_utc, matchup, status_str)."""
+    utc = row.get("event_date") or ""
+    date_str = utc[5:10].replace("-", " ").strip() if len(utc) >= 10 else "?"
+    month_map = {"06": "Jun", "07": "Jul"}
+    parts = date_str.split(" ")
+    if len(parts) == 2:
+        date_str = f"{month_map.get(parts[0], parts[0])} {parts[1]}"
+    time_str = utc[11:16] if len(utc) >= 16 else "TBD"
+    home = row.get("home_team", "?")
+    away = row.get("away_team", "?")
+    status = (row.get("status") or "").lower()
+    sh, sa = row.get("home_score"), row.get("away_score")
+    if status in BZZ_FINISHED and sh not in ("", None):
+        status_str = f"FT {sh}–{sa}"
+    elif status in BZZ_LIVE:
+        status_str = "LIVE"
+    else:
+        status_str = "UPCOMING"
+    return utc, date_str, time_str, f"{home} vs {away}", status_str
+
+
+def _prediction_result_label(pred: dict) -> str:
+    code = (pred.get("predicted_result") or "").upper()
+    home = pred.get("home_team", "Home")
+    away = pred.get("away_team", "Away")
+    score = pred.get("most_likely_score") or "—"
+    if code == "H":
+        return f"{home} win (likely {score})"
+    if code == "A":
+        return f"{away} win (likely {score})"
+    if code == "D":
+        return f"Draw (likely {score})"
+    return score
+
+
+def _confidence_label(conf: str | float | None) -> str:
+    try:
+        c = float(conf)
+    except (TypeError, ValueError):
+        return "—"
+    if c >= 0.55:
+        return "High"
+    if c >= 0.40:
+        return "Medium"
+    return "Low"
+
+
+def _format_fixtures_range(rows: list[dict], date_from: str, date_to: str) -> str:
+    if not rows:
+        return f"No World Cup 2026 fixtures between {date_from} and {date_to}."
+
+    parsed = sorted(
+        [(_format_bzz_fixture_row(r), r) for r in rows],
+        key=lambda x: x[0][0],
+    )
+    lines = [
+        f"📅 WORLD CUP 2026 FIXTURES — {date_from} to {date_to}",
+        f"  {len(parsed)} match(es)\n",
+        f"  {'Date':<8} {'UTC':<6} {'Match':<42} {'Status':<12} {'ML prediction'}",
+        "  " + "─" * 95,
+    ]
+    for (utc, date_str, time_str, matchup, status_str), row in parsed:
+        pred = get_bzzoiro_prediction_for_event(row.get("event_id", ""))
+        if pred:
+            xgh = pred.get("xg_home") or "—"
+            xga = pred.get("xg_away") or "—"
+            conf = _confidence_label(pred.get("model_confidence"))
+            pred_line = (
+                f"{_prediction_result_label(pred)} | xG {xgh}–{xga} | {conf}"
+            )
+        else:
+            pred_line = "—"
+        lines.append(
+            f"  {date_str:<8} {time_str:<6} {matchup:<42} {status_str:<12} {pred_line}"
+        )
+    lines.append(
+        "\n  Predictions from bzzoiro ML export (probabilities + xG). "
+        "Use get_match_preview(team_a, team_b) for full H2H and squad analysis."
+    )
+    return "\n".join(lines)
+
+
+async def _fetch_bzz_fixtures_range(date_from: str, date_to: str) -> list[dict]:
+    csv_rows = get_bzzoiro_fixtures_in_range(date_from, date_to)
+    if csv_rows:
+        return csv_rows
+    if not uses_bzzoiro_live():
+        return []
+    try:
+        events = await bzzoiro.get_events(date_from=date_from, date_to=date_to)
+        return [
+            {
+                "event_id": e.get("id"),
+                "event_date": e.get("event_date", ""),
+                "status": e.get("status", ""),
+                "home_team_id": e.get("home_team_id"),
+                "home_team": e.get("home_team", "?"),
+                "away_team_id": e.get("away_team_id"),
+                "away_team": e.get("away_team", "?"),
+                "home_score": e.get("home_score"),
+                "away_score": e.get("away_score"),
+            }
+            for e in events
+            if WC_TOURNAMENT_START <= (e.get("event_date") or "")[:10] <= WC_TOURNAMENT_END
+        ]
+    except Exception as exc:
+        logger.warning(f"bzzoiro events range fetch failed: {exc}")
+        return []
+
+
+async def get_fixtures_range(date_from: str, date_to: str) -> str:
+    """
+    Return FIFA World Cup 2026 fixtures between two dates (inclusive) with bzzoiro ML predictions.
+    Use when the user asks: fixtures for Jun 11–13, opening weekend schedule, first 3 days of
+    the World Cup, matches between two dates, predict all games this week.
+    Dates must be YYYY-MM-DD within 2026-06-11 and 2026-07-19. Includes predicted result,
+    likely score, xG, and confidence from bzzoiro — do NOT invent pairings from memory.
+    Prefer this over multiple get_team_fixtures calls for multi-day schedules.
+    """
+    clamped = _clamp_fixture_range(date_from, date_to)
+    if isinstance(clamped, str):
+        return clamped
+    date_from, date_to = clamped
+
+    cached = cache.get("fixtures", date_from=date_from, date_to=date_to, source="range_v1")
+    if cached:
+        return cached
+
+    rows = await _fetch_bzz_fixtures_range(date_from, date_to)
+    result = _format_fixtures_range(rows, date_from, date_to)
+    cache.set("fixtures", result, date_from=date_from, date_to=date_to, source="range_v1")
+    return result
+
+
 async def get_today_matches() -> str:
     """
     Return today's FIFA World Cup 2026 match schedule with live scores.
@@ -102,8 +270,12 @@ async def get_today_matches() -> str:
     Returns matches bucketed into LIVE, UPCOMING, and FINISHED with scores and venues.
     """
     today = date.today().isoformat()
-
-    cached = cache.get("fixtures", date=today)
+    # Use the live cache bucket when games are in play (30s TTL); otherwise fixtures (24h).
+    # get/set must use the same bucket — a prior bug stored live days under "live" but
+    # always read from "fixtures", so every request missed cache during matches.
+    cached = cache.get("live", date=today, source="today_matches") or cache.get(
+        "fixtures", date=today
+    )
     if cached:
         return cached
 
@@ -133,8 +305,10 @@ async def get_today_matches() -> str:
 
     result = _format_fixtures(live, upcoming, finished)
 
-    ttl_key = "live" if live else "fixtures"
-    cache.set(ttl_key, result, date=today)
+    if live:
+        cache.set("live", result, date=today, source="today_matches")
+    else:
+        cache.set("fixtures", result, date=today)
     return result
 
 
@@ -152,7 +326,7 @@ async def get_team_fixtures(team: str) -> str:
     if team_id is None:
         return f"Team '{team}' not found. Try full name (e.g. 'South Korea', 'United States')."
 
-    cached = cache.get("fixtures", team_id=team_id, source="fixtures_v2")
+    cached = cache.get("fixtures", team_id=team_id, source="fixtures_v3")
     if cached:
         return cached
 
@@ -187,7 +361,7 @@ async def get_team_fixtures(team: str) -> str:
             lines.append(f"  {date_str} | {matchup:<35} | {time_str} UTC | {result_str}")
         lines.append(f"\n  {len(parsed)} group stage match(es) scheduled")
         result = "\n".join(lines)
-        cache.set("fixtures", result, team_id=team_id, source="fixtures_v2")
+        cache.set("fixtures", result, team_id=team_id, source="fixtures_v3")
         return result
 
     try:
@@ -238,5 +412,5 @@ async def get_team_fixtures(team: str) -> str:
     lines.append(f"\n  {len(matches)} group stage match(es) scheduled")
 
     result = "\n".join(lines)
-    cache.set("fixtures", result, team_id=team_id, source="fixtures_v2")
+    cache.set("fixtures", result, team_id=team_id, source="fixtures_v3")
     return result

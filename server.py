@@ -5,7 +5,7 @@ from fastmcp import FastMCP
 from config import settings
 from tools.compare import compare_teams_for_worldcup
 from tools.favorites import get_tournament_favorites
-from tools.fixtures import get_team_fixtures, get_today_matches
+from tools.fixtures import get_fixtures_range, get_team_fixtures, get_today_matches
 from tools.head_to_head import get_h2h
 from tools.match import get_live_match, get_match_preview
 from tools.players import get_top_scorers
@@ -40,6 +40,7 @@ TOOLS = [
     analyze_team_for_worldcup,
     compare_teams_for_worldcup,
     get_team_fixtures,
+    get_fixtures_range,
     get_group_overview,
     get_tournament_favorites,
     search_players,
@@ -51,7 +52,9 @@ The tournament runs June 11 – July 19, 2026 across USA, Canada, and Mexico.
 Format: 48 teams, 12 groups (A–L), top 2 per group + best 8 third-place teams advance (32 total).
 
 Available tools:
-- get_today_matches       → today's schedule and live scores
+- get_today_matches       → today's schedule and live scores only (not multi-day)
+- get_fixtures_range      → WC 2026 fixtures + ML predictions between two dates (YYYY-MM-DD)
+- get_team_fixtures       → one team's full 2026 WC schedule (not for multi-day queries)
 - get_live_match          → real-time stats for an ongoing match
 - get_match_preview       → full pre-match analysis (form, xG, H2H)
 - get_team_form           → a team's stats and form streak this tournament
@@ -61,7 +64,12 @@ Available tools:
 - simulate_group_scenarios → what a team needs to qualify from their group
 - get_group_overview      → full Group X preview: standings + all 4 team profiles + predicted order
 - get_tournament_favorites → power rankings of all 48 teams by squad strength
+- analyze_team_for_worldcup → full squad analysis: pedigree, top performers, league breakdown, proj goals
+- compare_teams_for_worldcup → side-by-side squad comparison of two nations
+- get_player_club_stats   → one player's 2025-26 club xG, goals, and league
+- get_nation_top_performers → top attackers for a nation by adjusted xG
 - get_nation_top_defenders → top DF/GK ranked by bzzoiro defending attribute
+- get_squad_league_breakdown → where a nation's squad players play club football (by league)
 - search_players          → search 2025-26 club stats by name, position, league, xG, or defending rating
 
 ALWAYS call a tool before answering any question about:
@@ -69,7 +77,14 @@ ALWAYS call a tool before answering any question about:
 - live or recent match scores
 - team form, xG, or stats this tournament
 - qualification status or scenarios
+- fixture schedules or score predictions for specific dates
 Never answer these from training data — the tournament is live.
+
+Fixture and prediction rules:
+- Multi-day schedules (opening weekend, first N days, date range): ALWAYS use get_fixtures_range.
+- Never build schedules by calling get_team_fixtures for many teams — that misses pairings.
+- Never invent match pairings from memory (e.g. Brazil vs Croatia on opening days).
+- Score predictions: use get_fixtures_range ML column or get_match_preview on exact pairings from that tool.
 
 Output formatting rules:
 - Always display tool output as-is, in plain text or a markdown code block.

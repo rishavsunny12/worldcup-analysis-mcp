@@ -6,6 +6,7 @@ from clients.api_football import api_football
 from clients.bzzoiro import bzzoiro
 from clients.football_data import football_data
 from config import GROUP_MAP, TEAM_ID_MAP, settings, uses_bzzoiro_live
+from data.loader import BZZ_GROUP_MAP, BZZ_TEAMS_BY_ID
 from tools.bzzoiro_parsers import parse_bzzoiro_standings
 
 logger = logging.getLogger(__name__)
@@ -92,6 +93,27 @@ def _parse_football_data_standings(data: dict) -> dict[str, list[dict]]:
     return groups
 
 
+def _fallback_group_rows(group: str) -> list[dict]:
+    """Pre-tournament / missing API group — zero table from bzzoiro CSV group map."""
+    rows = []
+    for tid in BZZ_GROUP_MAP.get(group, []):
+        team = BZZ_TEAMS_BY_ID.get(tid, {})
+        rows.append({
+            "team": team.get("team_name") or team.get("short_name") or "?",
+            "team_id": tid,
+            "played": 0,
+            "won": 0,
+            "draw": 0,
+            "lost": 0,
+            "gf": 0,
+            "ga": 0,
+            "gd": 0,
+            "pts": 0,
+            "form": "",
+        })
+    return rows
+
+
 async def get_group_standings(group: str = "all") -> str:
     """
     Return current FIFA World Cup 2026 group standings with qualification markers.
@@ -111,8 +133,6 @@ async def get_group_standings(group: str = "all") -> str:
         if uses_bzzoiro_live():
             raw = await bzzoiro.get_standings()
             groups = parse_bzzoiro_standings(raw)
-            if "ALL" in groups and group != "ALL":
-                groups = {k: v for k, v in groups.items() if k != "ALL"}
         elif settings.TIER == "free":
             raw = await football_data.get_standings()
             groups = _parse_football_data_standings(raw)
@@ -142,7 +162,11 @@ async def get_group_standings(group: str = "all") -> str:
         result = "\n\n".join(sections)
     else:
         if group not in groups:
-            return f"No standings found for Group {group}."
+            fallback = _fallback_group_rows(group)
+            if fallback:
+                groups[group] = fallback
+            else:
+                return f"No standings found for Group {group}."
         result = _format_table(group, groups[group])
 
     cache.set("standings", result, group=group)
@@ -165,7 +189,7 @@ async def get_group_overview(group: str) -> str:
     if group not in VALID_GROUPS:
         return f"Invalid group '{group}'. Use A through L."
 
-    cached = cache.get("standings", group=group, source="overview_v3")
+    cached = cache.get("standings", group=group, source="overview_v4")
     if cached:
         return cached
 
@@ -227,5 +251,5 @@ async def get_group_overview(group: str) -> str:
     ]
 
     result = "\n".join(lines)
-    cache.set("standings", result, group=group, source="overview_v3")
+    cache.set("standings", result, group=group, source="overview_v4")
     return result

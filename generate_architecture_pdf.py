@@ -1,5 +1,14 @@
-"""One-off script: generates the MCP deploy & auth architecture PDF."""
+"""
+Generate the complete worldcup-analysis-mcp architecture PDF.
+
+Run:  python generate_architecture_pdf.py
+Output: docs/worldcup-analysis-mcp-architecture.pdf
+"""
+from __future__ import annotations
+
 from fpdf import FPDF, XPos, YPos
+
+OUT_PATH = "docs/worldcup-analysis-mcp-architecture.pdf"
 
 NAVY = (26, 26, 46)
 BLUE = (30, 80, 160)
@@ -12,389 +21,586 @@ DARK_GRAY = (60, 60, 60)
 MID_GRAY = (120, 120, 130)
 
 
-class PDF(FPDF):
+class ArchPDF(FPDF):
     def header(self):
         self.set_fill_color(*NAVY)
-        self.rect(0, 0, 210, 16, "F")
-        self.set_font("Helvetica", "B", 9)
+        self.rect(0, 0, 210, 14, "F")
+        self.set_font("Helvetica", "B", 8)
         self.set_text_color(*WHITE)
-        self.set_xy(0, 4)
-        self.cell(0, 8, "worldcup-analysis-mcp  |  Deploy & Auth Architecture Guide", align="C")
+        self.set_xy(0, 3)
+        self.cell(0, 8, "worldcup-analysis-mcp  |  Complete Architecture Reference", align="C")
         self.set_text_color(*BLACK)
-        self.set_y(20)
+        self.set_y(18)
 
     def footer(self):
-        self.set_y(-13)
+        self.set_y(-12)
         self.set_font("Helvetica", "I", 8)
         self.set_text_color(*MID_GRAY)
         self.cell(0, 8, f"Page {self.page_no()}", align="C")
         self.set_text_color(*BLACK)
 
     def section(self, num: str, title: str):
-        self.ln(6)
+        self.ln(4)
+        if self.get_y() > 255:
+            self.add_page()
         self.set_fill_color(*NAVY)
         self.set_text_color(*WHITE)
-        self.set_font("Helvetica", "B", 12)
-        self.cell(0, 9, f"  {num}.  {title}", new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
-        self.set_text_color(*BLACK)
-        self.ln(3)
-
-    def subsection(self, title: str):
-        self.ln(3)
-        self.set_font("Helvetica", "B", 10)
-        self.set_text_color(*BLUE)
-        self.cell(0, 6, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.set_text_color(*BLACK)
-        self.ln(1)
-
-    def body(self, text: str):
-        self.set_font("Helvetica", "", 10)
-        self.set_text_color(*DARK_GRAY)
-        self.multi_cell(0, 5.5, text)
-        self.set_text_color(*BLACK)
-        self.ln(1)
-
-    def bullets(self, items: list[str]):
-        self.set_font("Helvetica", "", 10)
-        self.set_text_color(*DARK_GRAY)
-        for item in items:
-            self.cell(6, 5.5, "-", new_x=XPos.RIGHT, new_y=YPos.TOP)
-            self.multi_cell(0, 5.5, item)
-        self.set_text_color(*BLACK)
-        self.ln(1)
-
-    def code(self, text: str):
-        self.set_fill_color(*LIGHT_GRAY)
-        self.set_draw_color(*BORDER_GRAY)
-        self.set_font("Courier", "", 8.5)
-        self.set_text_color(40, 40, 90)
-        self.multi_cell(0, 5, text, border=1, fill=True)
+        self.set_font("Helvetica", "B", 11)
+        self.cell(0, 8, f"  {num}.  {title}", new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
         self.set_text_color(*BLACK)
         self.ln(2)
 
-    def step_box(self, num: int, actor: str, action: str, detail: str = ""):
-        self.set_fill_color(*LIGHT_BLUE)
-        self.set_draw_color(*BLUE)
+    def subsection(self, title: str):
+        self.ln(2)
+        if self.get_y() > 268:
+            self.add_page()
         self.set_font("Helvetica", "B", 9.5)
-        self.set_text_color(*NAVY)
-        self.cell(0, 7, f"  Step {num}  [{actor}]  ->  {action}",
-                  border=1, new_x=XPos.LMARGIN, new_y=YPos.NEXT, fill=True)
-        if detail:
-            self.set_font("Helvetica", "I", 8.5)
-            self.set_fill_color(240, 245, 255)
-            self.set_text_color(*DARK_GRAY)
-            self.multi_cell(0, 5.5, f"       {detail}", border="LRB", fill=True)
+        self.set_text_color(*BLUE)
+        self.cell(0, 5.5, title, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_text_color(*BLACK)
+        self.ln(0.5)
+
+    def body(self, text: str):
+        self.set_font("Helvetica", "", 9)
+        self.set_text_color(*DARK_GRAY)
+        self.multi_cell(0, 4.8, text)
+        self.set_text_color(*BLACK)
+        self.ln(0.5)
+
+    def bullets(self, items: list[str]):
+        self.set_font("Helvetica", "", 9)
+        self.set_text_color(*DARK_GRAY)
+        x0 = self.l_margin
+        for item in items:
+            if self.get_y() > 275:
+                self.add_page()
+            self.set_x(x0)
+            self.cell(5, 4.8, "-", new_x=XPos.RIGHT, new_y=YPos.TOP)
+            w = self.w - self.l_margin - self.r_margin - 5
+            self.multi_cell(w, 4.8, item)
+        self.set_text_color(*BLACK)
+        self.ln(0.5)
+
+    def code(self, text: str):
+        if self.get_y() > 250:
+            self.add_page()
+        self.set_fill_color(*LIGHT_GRAY)
+        self.set_draw_color(*BORDER_GRAY)
+        self.set_font("Courier", "", 7.5)
+        self.set_text_color(40, 40, 90)
+        self.multi_cell(0, 4.2, text, border=1, fill=True)
         self.set_text_color(*BLACK)
         self.ln(1.5)
 
-    def key_value(self, label: str, value: str):
-        self.set_font("Helvetica", "B", 9.5)
-        self.set_text_color(*NAVY)
-        self.cell(48, 6, label, new_x=XPos.RIGHT, new_y=YPos.TOP)
-        self.set_font("Helvetica", "", 9.5)
-        self.set_text_color(*DARK_GRAY)
-        self.multi_cell(0, 6, value)
-        self.set_text_color(*BLACK)
+    def table_row(self, cols: list[str], widths: list[int], bold: bool = False):
+        self.set_font("Helvetica", "B" if bold else "", 8)
+        for col, w in zip(cols, widths):
+            self.cell(w, 5.5, col, border=1)
+        self.ln()
+
+    def tool_block(
+        self,
+        name: str,
+        purpose: str,
+        trigger: str,
+        flow: str,
+        data: str,
+        cache_ttl: str,
+    ):
+        if self.get_y() > 240:
+            self.add_page()
+        self.subsection(name)
+        self.body(f"Purpose: {purpose}")
+        self.body(f"When the LLM calls it: {trigger}")
+        self.body(f"Execution flow: {flow}")
+        self.body(f"Data sources: {data}")
+        self.body(f"Cache: {cache_ttl}")
 
 
 def build() -> None:
-    pdf = PDF()
-    pdf.set_left_margin(14)
-    pdf.set_right_margin(14)
-    pdf.set_auto_page_break(auto=True, margin=18)
+    pdf = ArchPDF()
+    pdf.set_left_margin(12)
+    pdf.set_right_margin(12)
+    pdf.set_auto_page_break(auto=True, margin=14)
     pdf.add_page()
 
-    # ── Cover block ───────────────────────────────────────────────────────────
-    pdf.ln(6)
-    pdf.set_font("Helvetica", "B", 22)
+    # Cover
+    pdf.ln(10)
+    pdf.set_font("Helvetica", "B", 20)
     pdf.set_text_color(*NAVY)
-    pdf.cell(0, 12, "worldcup-analysis-mcp", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
-    pdf.set_font("Helvetica", "", 13)
+    pdf.cell(0, 10, "worldcup-analysis-mcp", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+    pdf.set_font("Helvetica", "", 12)
     pdf.set_text_color(*BLUE)
-    pdf.cell(0, 8, "Deploy & Authentication Architecture Guide", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+    pdf.cell(0, 7, "Complete Architecture Reference", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
     pdf.set_font("Helvetica", "I", 9)
     pdf.set_text_color(*MID_GRAY)
-    pdf.cell(0, 6, "FIFA World Cup 2026 Analysis MCP Server", new_x=XPos.LMARGIN, new_y=YPos.NEXT, align="C")
+    pdf.cell(0, 6, "Data loading  |  Tools  |  APIs  |  Cache  |  OAuth  |  Deployment", align="C")
     pdf.set_text_color(*BLACK)
-    pdf.ln(6)
-
-    pdf.set_draw_color(*NAVY)
-    pdf.set_line_width(0.5)
-    pdf.line(14, pdf.get_y(), 196, pdf.get_y())
     pdf.ln(8)
+    pdf.body(
+        "This document explains every layer of the FIFA World Cup 2026 MCP server: how data is "
+        "loaded at startup, how requests flow from Claude/Cursor to tools, which external APIs "
+        "each tool uses, and how OAuth protects the production deployment on Railway."
+    )
 
-    # ── 1. WHAT IS THIS PROJECT ───────────────────────────────────────────────
-    pdf.section("1", "What Is This Project?")
+    # 1 Overview
+    pdf.section("1", "System Overview")
     pdf.body(
-        "worldcup-analysis-mcp is a Model Context Protocol (MCP) server that gives AI assistants "
-        "like Claude live access to FIFA World Cup 2026 data. Instead of Claude relying on its "
-        "training data (which goes stale), it calls our server's tools to get real-time scores, "
-        "standings, player stats, and match analysis."
+        "worldcup-analysis-mcp is a FastMCP server exposing 19 async Python tools. An MCP client "
+        "(Claude Desktop, Cursor, or any MCP-compatible assistant) sends natural-language questions; "
+        "the model chooses a tool, the server executes it, and returns a formatted plain-text string "
+        "that the model shows to the user."
     )
-    pdf.subsection("What MCP Is (in plain terms)")
-    pdf.body(
-        "MCP (Model Context Protocol) is a standard way for AI assistants to connect to external "
-        "tools and data sources. Think of it like a USB standard for AI: instead of building "
-        "custom integrations for every AI tool, you build one MCP server and any compatible AI "
-        "client can use it. Claude, our AI, supports MCP natively."
-    )
-    pdf.subsection("What Our Server Provides")
+    pdf.subsection("Core design rules")
     pdf.bullets([
-        "17 tools: live scores, group standings, team form, head-to-head, top scorers, match previews...",
-        "Data from two APIs: API-Football (api-sports.io) and football-data.org",
-        "Player club stats from Understat (2025-26 season CSVs pre-loaded at startup)",
-        "Intelligent caching so repeated questions don't burn API quota",
+        "Clients know APIs. Tools know questions. HTTP calls live only in clients/*.py.",
+        "Every tool is async, returns str (never raw JSON), and checks cache before calling APIs.",
+        "Team names resolve through resolve_team_id() or resolve_bzzoiro_team_id() - never hardcoded.",
+        "Live tournament data routes to bzzoiro when LIVE_DATA_SOURCE=bzzoiro (default).",
+        "Squad/club analytics use pre-loaded CSVs (bzzoiro + understat) via data/loader.py.",
     ])
+    pdf.subsection("High-level request flow")
+    pdf.code(
+        "User question in chat\n"
+        "    -> MCP client (Claude/Cursor) picks a tool + arguments\n"
+        "    -> HTTP POST /mcp  (Bearer token in production)\n"
+        "    -> FastMCP (server.py) dispatches to registered tool function\n"
+        "    -> tools/<name>.py: cache.get() -> client API or data/loader -> format str\n"
+        "    -> cache.set() -> return text to MCP client -> shown to user"
+    )
 
-    # ── 2. DEPLOY ARCHITECTURE ────────────────────────────────────────────────
-    pdf.section("2", "Deploy Architecture")
-    pdf.body(
-        "The server runs on Railway, a cloud platform that builds and hosts the container "
-        "automatically every time you push to GitHub."
+    # 2 Runtime modes
+    pdf.section("2", "Server Runtime Modes (server.py)")
+    pdf.table_row(["Mode", "Command", "Transport", "Auth"], [22, 55, 40, 63], bold=True)
+    pdf.table_row(
+        ["Local", "python server.py", "stdio", "None - Claude Desktop subprocess"],
+        [22, 55, 40, 63],
     )
-    pdf.subsection("The Deploy Stack")
-    pdf.bullets([
-        "Railway: builds the Docker image, injects environment variables, exposes HTTPS",
-        "Railpack (v0.26): Railway's builder - detects Python, reads Procfile, installs requirements.txt",
-        "Uvicorn: the ASGI web server that FastMCP uses to serve HTTP requests",
-        "FastMCP 3.4.0: the Python framework that wraps our tools into an MCP-compliant server",
-        "Python 3.13: the runtime",
-    ])
-    pdf.subsection("Startup Command (Procfile)")
-    pdf.code("web: python server.py --sse")
-    pdf.body(
-        "The '--sse' flag tells server.py to start in HTTP mode with OAuth auth enabled. "
-        "Without this flag it starts in stdio mode (for local Claude Desktop use), which never "
-        "binds to a port and so Railway's health check would fail."
+    pdf.table_row(
+        ["HTTP dev", "python server.py --http", "streamable-http", "None"],
+        [22, 55, 40, 63],
     )
-    pdf.subsection("Key Environment Variables")
-    pdf.key_value("API_FOOTBALL_KEY", "Your api-sports.io key (for live match data)")
-    pdf.key_value("FOOTBALL_DATA_KEY", "Your football-data.org token (for standings, fixtures)")
-    pdf.key_value("API_FOOTBALL_TIER", '"free" during dev, "paid" from June 11 (tournament start)')
-    pdf.key_value("PORT", "Injected automatically by Railway - server reads this to bind Uvicorn")
-    pdf.key_value("RAILWAY_PUBLIC_DOMAIN", "Injected by Railway - server uses this to build the OAuth base URL")
+    pdf.table_row(
+        ["Production", "python server.py --sse", "streamable-http", "OAuth 2.0 + PKCE"],
+        [22, 55, 40, 63],
+    )
     pdf.ln(2)
     pdf.body(
-        "We do NOT need to set BASE_URL manually on Railway because the server auto-detects it:"
-    )
-    pdf.code(
-        "railway_domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '')\n"
-        "base_url = settings.BASE_URL or f'https://{railway_domain}'"
+        "Railway Procfile runs: web: python server.py --sse. The server reads PORT from the "
+        "environment, builds BASE_URL from RAILWAY_PUBLIC_DOMAIN, creates SimpleOAuthProvider, "
+        "registers all 19 tools, and binds Uvicorn to 0.0.0.0:PORT."
     )
 
-    pdf.subsection("How Railway Routes Traffic")
-    pdf.body(
-        "Railway puts an HTTPS reverse proxy in front of your container. "
-        "All requests arrive at your Railway domain over HTTPS (port 443) and are forwarded "
-        "to your container's HTTP port (e.g. 8080). This means:"
-    )
-    pdf.bullets([
-        "Your container only listens on HTTP (no TLS to manage yourself)",
-        "All external URLs use HTTPS automatically",
-        "Railway provides the domain: worldcup-analysis-mcp-production.up.railway.app",
-    ])
-
-    # ── 3. AUTH ARCHITECTURE ──────────────────────────────────────────────────
+    # 3 Data loading
     pdf.add_page()
-    pdf.section("3", "Authentication Architecture")
-    pdf.subsection("Why Auth Is Required")
+    pdf.section("3", "Data Loading Layer (data/loader.py)")
     pdf.body(
-        "When Claude connects to a remote MCP server (one hosted on the internet, not running "
-        "locally on your machine), Anthropic mandates that the server implements OAuth 2.0. "
-        "This prevents Claude from calling arbitrary unauthenticated servers on your behalf. "
-        "Our server implements a minimal OAuth 2.0 provider directly in Python - no third-party "
-        "auth service needed."
+        "Most static data is loaded once at Python import time (module-level singletons). "
+        "This avoids repeated disk I/O and keeps squad analytics fast. Live scores and standings "
+        "during the tournament come from the bzzoiro HTTP API instead."
     )
-    pdf.subsection("The Auth Protocol: OAuth 2.0 Authorization Code Flow + PKCE")
-    pdf.body(
-        "OAuth 2.0 is an industry-standard authorization protocol. We use the 'Authorization Code "
-        "Flow with PKCE' variant, which is designed for public clients (apps that cannot safely "
-        "store a client secret). Here is what each part means:"
-    )
-    pdf.bullets([
-        "Authorization Code Flow: instead of Claude receiving a token directly, it first gets a "
-        "short-lived 'authorization code'. The code is then exchanged for a long-lived access token. "
-        "This two-step process means the token never travels through the browser.",
-        "PKCE (Proof Key for Code Exchange): Claude generates a random 'code verifier' and sends "
-        "a hashed version ('code challenge') at the start. When exchanging the code for a token, "
-        "it must prove it has the original verifier. This prevents a malicious app from stealing "
-        "the authorization code mid-flow.",
-        "Dynamic Client Registration: Claude registers itself with our server at the start of each "
-        "new session. Our server issues it a client_id. This means we don't need to pre-configure "
-        "any clients.",
-    ])
-
-    pdf.subsection("Where Auth Lives in the Code")
-    pdf.key_value("auth/oauth_provider.py", "Our custom OAuth provider: approval page, token storage, all OAuth endpoints")
-    pdf.key_value("server.py (--sse mode)", "Creates SimpleOAuthProvider, passes it to FastMCP, starts HTTP server")
-    pdf.key_value("FastMCP 3.4.0", "Handles the /authorize, /token, /register routes via OAuthProvider base class")
-    pdf.ln(3)
-
-    pdf.subsection("OAuth Endpoints on Our Server")
-    pdf.code(
-        "/.well-known/oauth-authorization-server   <- Auth server discovery (auto by FastMCP)\n"
-        "/.well-known/oauth-protected-resource     <- Resource metadata: tells Claude /mcp is the endpoint\n"
-        "/register                                  <- Dynamic client registration (auto by FastMCP)\n"
-        "/authorize                                 <- Starts the auth flow, redirects to approval page\n"
-        "/oauth/approve  (GET)                      <- Shows the one-click 'Approve Access' HTML page\n"
-        "/oauth/approve  (POST)                     <- Records approval, redirects Claude back with code\n"
-        "/token                                     <- Exchanges authorization code for access token\n"
-        "/mcp                                       <- The actual MCP endpoint (tools live here)"
-    )
-
-    # ── 4. FULL CONNECTION FLOW ───────────────────────────────────────────────
-    pdf.add_page()
-    pdf.section("4", "Full Connection Flow: Step by Step")
-    pdf.body(
-        "This is the complete sequence of what happens the first time you connect Claude to the "
-        "MCP server in the Claude connector UI."
-    )
+    pdf.subsection("CSV files loaded at startup")
+    widths = [70, 108]
+    pdf.table_row(["File", "Loaded into"], widths, bold=True)
+    for row in [
+        ("understat_*_2025_26_player_stats.csv (6 leagues)", "PLAYER_INDEX, ALL_PLAYERS"),
+        ("data/bzzoiro_wc_players.csv", "BZZ_PLAYER_INDEX - 48-team squads"),
+        ("data/bzzoiro_wc_teams.csv", "BZZ_TEAMS_BY_NAME, BZZ_TEAMS_BY_ID"),
+        ("data/bzzoiro_wc_fixtures.csv", "BZZ_FIXTURES - group-stage schedule"),
+        ("data/bzzoiro_wc_predictions.csv", "BZZ_PREDICTIONS - ML win/xG predictions"),
+        ("worldcup_squad_players.csv", "Supplementary squad metadata"),
+    ]:
+        pdf.table_row(list(row), widths)
     pdf.ln(2)
 
-    pdf.step_box(1, "Claude", "GET /mcp",
-                 "Claude tries to connect to the MCP endpoint. Gets back HTTP 401 Unauthorized "
-                 "with a WWW-Authenticate header pointing to the resource metadata URL.")
-    pdf.step_box(2, "Claude", "GET /.well-known/oauth-protected-resource",
-                 "Claude fetches resource metadata. Our server returns: { 'resource': '.../mcp', "
-                 "'authorization_servers': ['https://...railway.app/'] }. "
-                 "This tells Claude: the MCP endpoint is /mcp, and the auth server is at root.")
-    pdf.step_box(3, "Claude", "GET /.well-known/oauth-authorization-server",
-                 "Claude discovers the OAuth server's endpoints: authorization_endpoint, token_endpoint, "
-                 "registration_endpoint. This JSON is auto-generated by FastMCP from our base_url.")
-    pdf.step_box(4, "Claude", "POST /register (Dynamic Client Registration)",
-                 "Claude registers itself: sends its name, redirect_uris. Our server issues a client_id. "
-                 "No client secret - Claude is a 'public client' using PKCE instead.")
-    pdf.step_box(5, "Claude", "Open browser -> GET /authorize?client_id=...&code_challenge=...&state=...",
-                 "Claude builds an authorization URL with PKCE code_challenge. Redirects your browser "
-                 "there. FastMCP validates parameters, calls our authorize() method which generates a "
-                 "session_id and redirects to /oauth/approve?session=<session_id>.")
-    pdf.step_box(6, "You (browser)", "GET /oauth/approve?session=...  ->  See approval page",
-                 "Your browser loads our custom HTML approval page: 'Allow access to FIFA World Cup "
-                 "2026 analysis tools?' with an Approve button. No password needed.")
-    pdf.step_box(7, "You (browser)", "POST /oauth/approve  (click Approve button)",
-                 "Form submits to our server. We generate a short-lived authorization code (5 min TTL), "
-                 "store it in memory, and redirect your browser back to Claude's callback URL with "
-                 "?code=<code>&state=<state>.")
-    pdf.step_box(8, "Claude backend", "POST /token  (code exchange)",
-                 "Claude's backend server (python-httpx) sends the authorization code + the original "
-                 "PKCE code_verifier. Our server verifies the code challenge matches, deletes the code "
-                 "(one-time use), generates a 64-character hex access token, stores it in memory with "
-                 "a 30-day expiry. Returns: { 'access_token': '...', 'token_type': 'bearer', "
-                 "'expires_in': 2592000 }.")
-    pdf.step_box(9, "Claude backend", "GET /mcp  (with Authorization: Bearer <token>)",
-                 "Claude now includes the Bearer token in every request to /mcp. FastMCP calls our "
-                 "load_access_token() which looks up the token in memory. If found and not expired, "
-                 "the request is authorized and proceeds to tool execution.")
-    pdf.step_box(10, "Claude", "MCP session established - tools are available",
-                 "Claude can now call any of the 17 tools. The connection stays alive. The token "
-                 "lasts 30 days so you won't need to re-approve unless the server restarts "
-                 "(token is in memory, lost on restart).")
+    pdf.subsection("Key loader functions")
+    pdf.bullets([
+        "find_player(name) - fuzzy match against understat top-6 league CSVs.",
+        "find_player_for_squad(name, bzz_row) - squad-safe match; rejects false hits.",
+        "get_bzzoiro_squad(team) - all players for a nation from bzzoiro export.",
+        "resolve_bzzoiro_team_id(name) - maps Mexico, usa, etc. to bzzoiro team_id.",
+        "get_bzzoiro_fixtures(team) / get_bzzoiro_fixtures_in_range(from, to) - schedules.",
+        "find_bzzoiro_prediction(team_a, team_b) - ML prediction row for a pairing.",
+        "get_adj_xg(row) - league-quality-adjusted xG for cross-league comparisons.",
+        "BZZ_GROUP_MAP - group A-L to bzzoiro team IDs (built from fixtures CSV).",
+    ])
+    pdf.subsection("Understat + bzzoiro merge logic (team_analysis.py)")
+    pdf.body(
+        "_build_csv_profile() joins bzzoiro squad rows with understat club stats where names "
+        "and clubs match. Players in leagues outside the top-6 (Saudi Pro League, MLS, etc.) "
+        "use bzzoiro-only stats. League quality factors (LEAGUE_QUALITY dict) normalize xG "
+        "so a Saudi league striker is not ranked equal to a Premier League striker."
+    )
 
-    # ── 5. KEY FILES ─────────────────────────────────────────────────────────
+    # 4 External APIs
+    pdf.section("4", "External API Clients (clients/)")
+    pdf.subsection("bzzoiro.py - primary live tournament source (LIVE_DATA_SOURCE=bzzoiro)")
+    pdf.bullets([
+        "Base: https://sports.bzzoiro.com/api/v2  |  Auth: Token {BZZOIRO_KEY}",
+        "League ID 27 = FIFA World Cup 2026",
+        "get_live_events(), get_events_today(), get_events(), get_standings()",
+        "Per-match: get_event(), get_event_stats(), get_event_incidents(), get_event_lineups()",
+        "get_top_scorers() aggregates player-stats across finished events",
+        "get_head_to_head_events(team_a, team_b) for H2H during tournament",
+    ])
+    pdf.subsection("api_football.py - legacy live + match previews")
+    pdf.bullets([
+        "Base: https://v3.football.api-sports.io  |  Used when LIVE_DATA_SOURCE=legacy",
+        "Always used by get_match_preview (team stats + H2H from API-Football)",
+        "get_live_fixtures(), get_fixture_stats(), get_fixture_events(), get_fixture_lineups()",
+    ])
+    pdf.subsection("football_data.py - legacy static (free tier)")
+    pdf.bullets([
+        "Base: https://api.football-data.org/v4  |  competition WC",
+        "Used when LIVE_DATA_SOURCE=legacy and API_FOOTBALL_TIER=free",
+        "get_matches(), get_standings(), get_scorers(), get_team_squad()",
+    ])
+
+    # 5 Cache
+    pdf.section("5", "Cache Layer (cache/cache_manager.py)")
+    pdf.body(
+        "Singleton CacheManager with separate TTLCache buckets. Keys are MD5 hashes of kwargs. "
+        "Set CACHE_BUST=1 to clear all caches on startup (one-time after deploy)."
+    )
+    pdf.table_row(["Bucket", "TTL (default)", "Used by"], [28, 28, 124], bold=True)
+    for row in [
+        ("live", "30s", "get_live_match; get_today_matches on live days"),
+        ("fixtures", "24h", "get_today_matches (no live); get_team_fixtures; get_fixtures_range"),
+        ("standings", "5m", "get_group_standings; get_group_overview"),
+        ("scorers", "5m", "get_top_scorers"),
+        ("form", "1h", "get_team_form; get_match_preview"),
+        ("h2h", "1h", "get_h2h"),
+        ("squad", "1h", "analyze_team, compare, squad_analysis tools"),
+        ("lineups", "5m", "reserved for lineup data"),
+    ]:
+        pdf.table_row(list(row), [28, 28, 124])
+
+    # 6 Routing
     pdf.add_page()
-    pdf.section("5", "Key Files and Their Roles")
-
-    pdf.subsection("server.py  -  The Entry Point")
-    pdf.body(
-        "Bootstraps the FastMCP server. In '--sse' mode (what Railway runs):"
-    )
-    pdf.bullets([
-        "Reads PORT from env (Railway injects this - e.g. 8080)",
-        "Reads RAILWAY_PUBLIC_DOMAIN to build base_url (e.g. https://worldcup-analysis-mcp-production.up.railway.app)",
-        "Creates SimpleOAuthProvider(base_url=base_url)",
-        "Builds FastMCP instance with auth=oauth",
-        "Registers all 17 tool functions",
-        "Calls mcp.run(transport='streamable-http', host='0.0.0.0', port=port)",
-    ])
+    pdf.section("6", "Data Source Routing (config.py)")
     pdf.code(
-        "# --sse mode startup (abridged)\n"
-        "railway_domain = os.getenv('RAILWAY_PUBLIC_DOMAIN', '')\n"
-        "base_url = settings.BASE_URL or f'https://{railway_domain}'\n"
-        "oauth = SimpleOAuthProvider(base_url=base_url)\n"
-        "mcp_http = _build_mcp(auth=oauth)\n"
-        "mcp_http.run(transport='streamable-http', host='0.0.0.0', port=port)"
+        "uses_bzzoiro_live()  ->  LIVE_DATA_SOURCE.lower() == 'bzzoiro'\n\n"
+        "When True (default):\n"
+        "  get_today_matches, get_live_match, get_group_standings,\n"
+        "  get_team_form, get_top_scorers, get_h2h, simulate_group_scenarios\n"
+        "  -> bzzoiro client + resolve_bzzoiro_team_id()\n\n"
+        "When False (legacy):\n"
+        "  API_FOOTBALL_TIER=free  -> football_data for static tools\n"
+        "  API_FOOTBALL_TIER=paid  -> api_football for all legacy tools\n"
+        "  get_live_match always used api_football even in legacy mode\n\n"
+        "Always CSV/bzzoiro (not affected by LIVE_DATA_SOURCE):\n"
+        "  Squad tools, get_team_fixtures (CSV first), get_fixtures_range (CSV first),\n"
+        "  get_match_preview (API-Football + bzzoiro prediction overlay)"
     )
 
-    pdf.subsection("auth/oauth_provider.py  -  The Auth Brain")
+    # 7 All tools
+    pdf.section("7", "All 19 MCP Tools - Purpose, Flow, and Data Sources")
+
+    tools = [
+        (
+            "get_today_matches()",
+            "Today's WC schedule bucketed LIVE / UPCOMING / FINISHED.",
+            "User asks what matches are on today, live scores now, today's games.",
+            "cache fixtures/live -> if bzzoiro: gather(events_today, live_events) -> "
+            "parse_bzzoiro_fixtures -> format. Legacy: football_data or api_football.",
+            "bzzoiro events/ + events/live/  OR  legacy APIs",
+            "30s if live games; else 24h (fixtures bucket)",
+        ),
+        (
+            "get_live_match(team)",
+            "Real-time score, xG, shots, possession, cards, last 5 events for one team.",
+            "What's the score in the Mexico game? Is Brazil playing now?",
+            "resolve team_id -> cache live -> bzzoiro.get_live_events(team_id) -> "
+            "match event -> gather(stats, incidents, lineups) -> _format_bzzoiro_live_match.",
+            "bzzoiro live API (4 parallel calls per match)",
+            "30s per team_id",
+        ),
+        (
+            "get_fixtures_range(date_from, date_to)",
+            "Multi-day fixture list with bzzoiro ML predictions (win prob, xG, score).",
+            "Opening weekend schedule, fixtures Jun 11-13, predict all games this week.",
+            "clamp dates to WC window -> cache -> CSV fixtures first -> API fallback -> "
+            "attach prediction per event_id -> format table.",
+            "data/bzzoiro_wc_fixtures.csv + bzzoiro_wc_predictions.csv; API if CSV empty",
+            "24h (fixtures bucket, source=range_v1)",
+        ),
+        (
+            "get_team_fixtures(team)",
+            "One team's full group-stage schedule with results.",
+            "When does Brazil play? Mexico schedule, team calendar.",
+            "resolve_team_id -> cache -> bzzoiro fixtures CSV for team -> "
+            "else football_data matches filtered by team_id.",
+            "bzzoiro_wc_fixtures.csv primary; football-data.org fallback",
+            "24h (fixtures, source=fixtures_v3)",
+        ),
+        (
+            "get_match_preview(team_a, team_b)",
+            "Pre-match analysis: WC form, xG profile, H2H, key stats, bzzoiro ML prediction.",
+            "Preview France vs Germany, who will win, matchup analysis.",
+            "resolve both IDs -> cache form -> gather(api team_stats x2, h2h) -> "
+            "format -> append bzzoiro club-season profiles if squads exist.",
+            "api_football (always) + data/loader predictions/squads",
+            "1h (form bucket, preview=True)",
+        ),
+        (
+            "get_team_form(team, last_n)",
+            "In-tournament W/D/L, goals, xG averages, last N match results.",
+            "How is Argentina doing in the tournament? Recent WC form.",
+            "bzzoiro: gather(standings, finished events) -> parse_bzz_team_form. "
+            "Legacy: api_football.get_team_stats.",
+            "bzzoiro standings + events  OR  api_football",
+            "1h per team_id + last_n",
+        ),
+        (
+            "get_h2h(team_a, team_b, last_n)",
+            "Head-to-head record, goals, results list with WC flag.",
+            "Brazil vs Argentina history, last 10 meetings.",
+            "bzzoiro: resolve bzz IDs -> get_head_to_head_events. "
+            "Legacy: api_football.get_h2h.",
+            "bzzoiro events  OR  api_football headtohead",
+            "1h per team pair + last_n",
+        ),
+        (
+            "get_group_standings(group)",
+            "Group table with qualification markers (top 2, 3rd, eliminated).",
+            "Group A standings, show all groups, points table.",
+            "cache -> bzzoiro.get_standings -> parse_bzzoiro_standings -> format.",
+            "bzzoiro leagues/27/standings/  OR  legacy standings APIs",
+            "5m per group letter",
+        ),
+        (
+            "get_top_scorers(top_n)",
+            "Golden Boot leaderboard with goals and assists.",
+            "Top scorers, Golden Boot, leading goalscorer.",
+            "bzzoiro: aggregate goals from player-stats on all finished events. "
+            "Legacy: football_data or api_football scorers endpoint.",
+            "bzzoiro (computed)  OR  legacy scorers API",
+            "5m",
+        ),
+        (
+            "simulate_group_scenarios(group, team)",
+            "Enumerates remaining fixture outcomes; says what team needs to qualify.",
+            "What does Mexico need to advance? Qualification scenarios.",
+            "fetch current standings + remaining fixtures -> enumerate 3^N outcomes -> "
+            "apply tiebreakers -> plain-English summary. No cache (always fresh).",
+            "bzzoiro standings + events  OR  legacy APIs",
+            "None - recomputed every call",
+        ),
+        (
+            "get_group_overview(group)",
+            "Standings + all 4 team squad profiles + predicted finish order.",
+            "Tell me about Group A, group preview, strongest group.",
+            "parallel: get_group_standings + analyze each of 4 teams -> merge overview.",
+            "standings API + bzzoiro squads + understat via loader",
+            "5m (standings, source=overview_v4)",
+        ),
+        (
+            "get_tournament_favorites(top_n)",
+            "Power rankings of all 48 teams by squad strength (adj xG).",
+            "Who are the favorites? Power rankings, strongest teams.",
+            "score all 48 squads via _build_csv_profile -> sort by pedigree -> format.",
+            "bzzoiro_wc_players.csv + understat CSVs only (no HTTP)",
+            "1h (squad bucket)",
+        ),
+        (
+            "analyze_team_for_worldcup(team)",
+            "Full squad analysis: pedigree %, top performers, league breakdown, proj goals.",
+            "Analyze Brazil for the World Cup, squad strength, team profile.",
+            "get_bzzoiro_squad -> _build_csv_profile -> format multi-section report.",
+            "bzzoiro + understat CSVs",
+            "1h (squad bucket)",
+        ),
+        (
+            "compare_teams_for_worldcup(team_a, team_b)",
+            "Side-by-side squad comparison table.",
+            "Compare France and England, who's stronger?",
+            "analyze both squads in parallel -> comparison table.",
+            "bzzoiro + understat CSVs",
+            "1h (squad bucket)",
+        ),
+        (
+            "get_player_club_stats(player_name)",
+            "Club-season xG, goals, league for one player.",
+            "Messi stats this season, player club form.",
+            "find_player + find_bzzoiro_player -> merge rows -> format.",
+            "understat CSVs + bzzoiro players CSV",
+            "1h (squad bucket)",
+        ),
+        (
+            "get_nation_top_performers(team, top_n)",
+            "Top attackers by adjusted xG for a nation.",
+            "Brazil's best attackers, top performers for Spain.",
+            "get_bzzoiro_squad -> rank by get_adj_xg -> format.",
+            "bzzoiro + understat CSVs",
+            "1h (squad bucket)",
+        ),
+        (
+            "get_nation_top_defenders(team, top_n)",
+            "Top DF/GK by bzzoiro attr_defending score.",
+            "Best defenders in France squad.",
+            "defensive_profile_from_squad -> format.",
+            "bzzoiro players CSV (attr_defending field)",
+            "1h (squad bucket)",
+        ),
+        (
+            "get_squad_league_breakdown(team)",
+            "Pie-style breakdown of where squad players play by league.",
+            "Where do USA players play club football?",
+            "count leagues in squad -> format percentages.",
+            "bzzoiro players CSV",
+            "1h (squad bucket)",
+        ),
+        (
+            "search_players(...)",
+            "Search all WC squad players by name, position, league, xG, defending.",
+            "Find all Brazilian strikers in top leagues, search players.",
+            "filter BZZ squads with optional filters -> format matches.",
+            "bzzoiro + understat CSVs",
+            "1h (squad bucket)",
+        ),
+    ]
+
+    for t in tools:
+        pdf.tool_block(*t)
+
+    # 8 OAuth
+    pdf.add_page()
+    pdf.section("8", "OAuth Authentication (Production)")
     pdf.body(
-        "Implements all OAuth logic. Key responsibilities:"
+        "Remote MCP clients must authenticate. The server implements OAuth 2.0 Authorization "
+        "Code + PKCE. Tokens persist in SQLite (not RAM) so users stay connected after Railway "
+        "redeploys when a volume is mounted at /data."
     )
+    pdf.subsection("Auth files")
     pdf.bullets([
-        "register_client(): stores Claude's client_id in memory when it first registers",
-        "authorize(): creates a session_id, stores pending auth data, returns the approval page URL",
-        "do_approve() route: handles the form submit, generates auth code, redirects to Claude callback",
-        "exchange_authorization_code(): verifies PKCE, generates access token, stores in self._tokens",
-        "load_access_token(): looks up token by string, checks expiry, returns AccessToken or None",
-        "protected_resource_metadata() route: serves /.well-known/oauth-protected-resource so Claude "
-        "knows the MCP endpoint is at /mcp (not root /)",
+        "auth/oauth_provider.py - SimpleOAuthProvider: approval page, code exchange, token issue.",
+        "auth/token_store.py - SQLite persistence for access_tokens and oauth_clients tables.",
+        "OAUTH_DB_PATH env - default /data/oauth.db on Railway volume, else data/oauth.db local.",
     ])
-    pdf.body(
-        "All token storage is in-memory (Python dict). Tokens are lost on server restart. "
-        "This means: after Railway redeploys your app, you need to disconnect and reconnect "
-        "the Claude connector (one click). With the 30-day TTL this is infrequent."
-    )
-
-    pdf.subsection("config.py  -  Settings and Team Data")
-    pdf.bullets([
-        "Settings class: reads all env vars at import time into typed attributes",
-        "TEAM_ID_MAP: maps team names/nicknames to football-data.org team IDs for all 48 WC teams",
-        "GROUP_MAP: maps group letters A-L to lists of team IDs",
-        "resolve_team_id(): fuzzy-matches user input ('usa', 'USMNT', 'United States') to a team ID",
-    ])
-
-    pdf.subsection("cache/cache_manager.py  -  API Quota Protection")
-    pdf.body(
-        "A singleton CacheManager with separate TTLCache buckets for each data type. "
-        "Every tool checks the cache before calling an API. TTLs:"
-    )
-    pdf.bullets([
-        "Live scores: 30 seconds (always fresh)",
-        "Standings: 5 minutes",
-        "Top scorers: 5 minutes",
-        "Team form / H2H: 1 hour",
-        "Fixtures: 24 hours",
-    ])
-
-    # ── 6. IMPORTANT ENDPOINTS ────────────────────────────────────────────────
-    pdf.section("6", "Important Endpoints & How to Test Them")
-    pdf.subsection("Verify Everything Is Working")
-    pdf.body("Open these URLs in your browser after deployment:")
+    pdf.subsection("OAuth endpoints")
     pdf.code(
-        "# 1. Auth server discovery (should return JSON with all OAuth endpoints)\n"
-        "https://worldcup-analysis-mcp-production.up.railway.app/.well-known/oauth-authorization-server\n\n"
-        "# 2. Resource metadata (should return resource=/mcp, must NOT be 404)\n"
-        "https://worldcup-analysis-mcp-production.up.railway.app/.well-known/oauth-protected-resource\n\n"
-        "# 3. MCP endpoint (should return 401 - means server is running with auth)\n"
-        "https://worldcup-analysis-mcp-production.up.railway.app/mcp"
+        "/.well-known/oauth-authorization-server  - discovery (auto by FastMCP)\n"
+        "/.well-known/oauth-protected-resource      - tells client MCP is at /mcp\n"
+        "/register                                   - dynamic client registration\n"
+        "/authorize                                  - starts flow -> /oauth/approve\n"
+        "/oauth/approve (GET)                        - one-click Approve Access HTML page\n"
+        "/oauth/approve (POST)                       - issues auth code, redirects to client\n"
+        "/token                                      - exchanges code + PKCE for Bearer token\n"
+        "/mcp                                        - MCP tool endpoint (requires Bearer)"
     )
-    pdf.subsection("Claude Connector URL")
-    pdf.code("https://worldcup-analysis-mcp-production.up.railway.app/mcp")
-    pdf.body("Always include /mcp at the end. This is the MCP endpoint, not the base URL.")
-
-    # ── 7. SECURITY MODEL ─────────────────────────────────────────────────────
-    pdf.section("7", "Security Model and Limitations")
-    pdf.subsection("What Is Protected")
+    pdf.subsection("Connection sequence (first time)")
     pdf.bullets([
-        "All 17 tools require a valid Bearer token to call - no anonymous access to MCP endpoint",
-        "Tokens are tied to a specific registered client_id (Claude's registration)",
-        "PKCE prevents authorization code interception by a third party",
-        "Tokens expire after 30 days - automatic re-auth required after that",
-        "Each auth code is single-use and expires in 5 minutes",
+        "1. Client GET /mcp -> 401 + WWW-Authenticate header.",
+        "2. Client reads /.well-known/oauth-protected-resource and authorization-server metadata.",
+        "3. Client POST /register -> receives client_id.",
+        "4. Browser opens /authorize with PKCE code_challenge.",
+        "5. User clicks Approve on /oauth/approve.",
+        "6. Client POST /token with code + code_verifier -> 30-day Bearer token (stored in SQLite).",
+        "7. All /mcp requests include Authorization: Bearer <token>.",
     ])
-    pdf.subsection("Known Limitations (by design - acceptable for personal use)")
+    pdf.subsection("What persists vs ephemeral")
+    pdf.table_row(["Data", "Storage", "Survives redeploy?"], [55, 45, 80], bold=True)
+    pdf.table_row(["Access tokens (30d)", "SQLite", "Yes (with /data volume)"], [55, 45, 80])
+    pdf.table_row(["OAuth client registrations", "SQLite", "Yes"], [55, 45, 80])
+    pdf.table_row(["Pending approval sessions", "In-memory", "No"], [55, 45, 80])
+    pdf.table_row(["Auth codes (5 min)", "In-memory", "No"], [55, 45, 80])
+    pdf.table_row(["Tool result caches", "In-memory TTLCache", "No - cleared on restart"], [55, 45, 80])
+
+    # 9 Project structure
+    pdf.add_page()
+    pdf.section("9", "Complete Project Structure")
+    pdf.body("Every file and its role in the system:")
+    structure = [
+        ("server.py", "Entry point. Registers 19 tools on FastMCP. --sse=OAuth HTTP, --http=plain HTTP, default=stdio."),
+        ("config.py", "Settings from env vars. TEAM_ID_MAP (48 teams). GROUP_MAP. uses_bzzoiro_live()."),
+        ("Procfile", "Railway start command: python server.py --sse"),
+        (".env.example", "Template for API keys, LIVE_DATA_SOURCE, cache TTLs, OAuth path."),
+        ("requirements.txt", "fastmcp, httpx, cachetools, pytest, python-dotenv."),
+        ("clients/api_football.py", "API-Football HTTP client (legacy live + previews)."),
+        ("clients/football_data.py", "football-data.org HTTP client (legacy free tier)."),
+        ("clients/bzzoiro.py", "bzzoiro live tournament API client (primary during WC)."),
+        ("cache/cache_manager.py", "TTLCache singleton; cache.get/set with hashed keys."),
+        ("data/loader.py", "CSV loading, player/squad/fixture/prediction lookups, adj xG."),
+        ("data/bzzoiro_wc_*.csv", "Pre-exported squads, teams, fixtures, ML predictions."),
+        ("data/oauth.db", "Local SQLite OAuth store (gitignored)."),
+        ("understat_*.csv", "Top-6 European league player stats 2025-26 season."),
+        ("worldcup_squad_players.csv", "Supplementary squad metadata."),
+        ("tools/fixtures.py", "get_today_matches, get_fixtures_range, get_team_fixtures."),
+        ("tools/match.py", "get_live_match, get_match_preview."),
+        ("tools/standings.py", "get_group_standings, get_group_overview."),
+        ("tools/team.py", "get_team_form."),
+        ("tools/head_to_head.py", "get_h2h."),
+        ("tools/players.py", "get_top_scorers."),
+        ("tools/scenarios.py", "simulate_group_scenarios."),
+        ("tools/team_analysis.py", "analyze_team_for_worldcup, _build_csv_profile."),
+        ("tools/compare.py", "compare_teams_for_worldcup."),
+        ("tools/favorites.py", "get_tournament_favorites."),
+        ("tools/squad_analysis.py", "Player search, top performers/defenders, league breakdown."),
+        ("tools/bzzoiro_parsers.py", "Normalize bzzoiro API responses to tool-friendly dicts."),
+        ("auth/oauth_provider.py", "OAuth provider with approval page and token exchange."),
+        ("auth/token_store.py", "SQLite persistence for tokens and registered clients."),
+        ("tests/test_*.py", "Unit tests with JSON fixtures; no live API in unit tests."),
+        ("tests/fixtures/*.json", "Saved API responses for offline testing."),
+        ("tests/test_bzzoiro_live.py", "Integration test for bzzoiro live endpoint (manual)."),
+        ("scripts/generate_csvs.py", "Regenerate understat CSV exports."),
+        ("scripts/generate_bzzoiro_stats.py", "Regenerate bzzoiro data exports."),
+        ("docs/OAUTH.md", "OAuth setup and persistence guide."),
+        ("docs/RAILWAY.md", "Railway deploy checklist and env vars."),
+        ("claude.md", "Agent instructions: architecture rules, tool specs, build order."),
+    ]
+    widths = [62, 116]
+    pdf.table_row(["Path", "Role"], widths, bold=True)
+    for path, role in structure:
+        if pdf.get_y() > 272:
+            pdf.add_page()
+            pdf.table_row(["Path", "Role"], widths, bold=True)
+        pdf.set_font("Helvetica", "", 7.5)
+        pdf.set_text_color(*DARK_GRAY)
+        pdf.cell(62, 5, path, border=1)
+        pdf.multi_cell(116, 5, role, border=1)
+        pdf.set_text_color(*BLACK)
+
+    # 10 Env vars
+    pdf.add_page()
+    pdf.section("10", "Environment Variables")
+    envs = [
+        ("API_FOOTBALL_KEY", "Required", "api-sports.io key for legacy live + match previews"),
+        ("FOOTBALL_DATA_KEY", "Required", "football-data.org token for legacy free tier"),
+        ("BZZOIRO_KEY", "Required", "bzzoiro API token for live tournament data"),
+        ("LIVE_DATA_SOURCE", "Optional", "bzzoiro (default) or legacy"),
+        ("API_FOOTBALL_TIER", "Optional", "free or paid - legacy routing + previews"),
+        ("CACHE_TTL_*", "Optional", "Override per-bucket TTL seconds"),
+        ("CACHE_BUST", "Optional", "Set 1 to clear in-memory caches on startup"),
+        ("BASE_URL", "Railway auto", "Public URL for OAuth; from RAILWAY_PUBLIC_DOMAIN"),
+        ("OAUTH_DB_PATH", "Recommended", "/data/oauth.db on Railway volume"),
+        ("PORT", "Railway auto", "HTTP port for Uvicorn"),
+    ]
+    pdf.table_row(["Variable", "Required?", "Purpose"], [40, 22, 118], bold=True)
+    for row in envs:
+        pdf.table_row(list(row), [40, 22, 118])
+
+    # 11 Testing
+    pdf.section("11", "Testing Strategy")
     pdf.bullets([
-        "Single-user: the approval page has no login - anyone who can reach the URL can approve. "
-        "This is fine because Railway is your personal server and you control who has the URL.",
-        "In-memory token storage: tokens are lost on server restart/redeploy. Re-connecting "
-        "the Claude connector takes about 30 seconds and just requires clicking 'Approve' again.",
-        "No refresh tokens: when the 30-day token expires, full re-auth is needed.",
-        "No user identity: our OAuth server doesn't verify who you are, it just presents an "
-        "approval page. Suitable for a personal/team MCP server, not a public multi-tenant service.",
+        "Unit tests: pytest tests/ -m 'not integration' - mock APIs, load tests/fixtures/*.json.",
+        "Integration: pytest tests/test_bzzoiro_live.py - hits real bzzoiro API (needs BZZOIRO_KEY).",
+        "Every tool should have happy-path, invalid-team, and cache-hit tests where applicable.",
+        "test_bzzoiro_tool_coverage.py verifies all 48 teams have squad data and tools are registered.",
     ])
 
-    out_path = "worldcup_mcp_architecture.pdf"
-    pdf.output(out_path)
-    print(f"PDF written to: {out_path}")
+    # 12 Game day checklist
+    pdf.section("12", "Game-Day Checklist (June 11+)")
+    pdf.bullets([
+        "Confirm LIVE_DATA_SOURCE=bzzoiro and BZZOIRO_KEY set on Railway.",
+        "Confirm /data volume mounted with OAUTH_DB_PATH=/data/oauth.db.",
+        "Unset CACHE_BUST in production after any one-time cache clear.",
+        "Smoke test: get_today_matches(), get_group_standings('A'), get_live_match('<team>').",
+        "Monitor bzzoiro rate limits in Railway logs (status=429).",
+        "get_top_scorers becomes slower as more matches finish (N player-stats calls).",
+    ])
+
+    pdf.output(OUT_PATH)
+    print(f"PDF written to: {OUT_PATH}")
 
 
 if __name__ == "__main__":

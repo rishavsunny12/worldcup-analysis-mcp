@@ -604,6 +604,10 @@ def defensive_profile_from_squad(bzz_squad: list[dict], top_n: int = 5) -> dict:
 
 # ── Predictions & fixtures CSVs ───────────────────────────────────────────────
 
+WC_TOURNAMENT_START = "2026-06-11"
+WC_TOURNAMENT_END = "2026-07-19"
+
+
 def _load_bzz_csv(path: Path) -> list[dict]:
     if not path.exists():
         logger.warning(f"bzzoiro CSV not found: {path}")
@@ -612,8 +616,34 @@ def _load_bzz_csv(path: Path) -> list[dict]:
         return list(csv.DictReader(f))
 
 
+def _fixture_date_key(row: dict) -> str:
+    """Return YYYY-MM-DD from a bzzoiro fixture/prediction row."""
+    raw = (row.get("event_date") or "")[:10]
+    return raw if len(raw) == 10 else ""
+
+
+def _is_wc_2026_fixture(row: dict) -> bool:
+    """Keep only FIFA World Cup 2026 tournament window (excludes 2014/2018/2022 history)."""
+    day = _fixture_date_key(row)
+    return WC_TOURNAMENT_START <= day <= WC_TOURNAMENT_END if day else False
+
+
+def _load_bzz_fixtures() -> list[dict]:
+    raw = _load_bzz_csv(ROOT / "data" / "bzzoiro_wc_fixtures.csv")
+    kept = [r for r in raw if _is_wc_2026_fixture(r)]
+    if len(kept) < len(raw):
+        logger.info(
+            f"bzzoiro fixtures: kept {len(kept)} WC 2026 rows, "
+            f"dropped {len(raw) - len(kept)} historical/out-of-window"
+        )
+    return kept
+
+
 BZZ_PREDICTIONS: list[dict] = _load_bzz_csv(ROOT / "data" / "bzzoiro_wc_predictions.csv")
-BZZ_FIXTURES: list[dict] = _load_bzz_csv(ROOT / "data" / "bzzoiro_wc_fixtures.csv")
+BZZ_FIXTURES: list[dict] = _load_bzz_fixtures()
+BZZ_PREDICTIONS_BY_EVENT: dict[str, dict] = {
+    str(row["event_id"]): row for row in BZZ_PREDICTIONS if row.get("event_id")
+}
 
 
 def _name_in_team(name: str, query: str) -> bool:
@@ -634,9 +664,22 @@ def find_bzzoiro_prediction(team_a: str, team_b: str) -> dict | None:
 
 
 def get_bzzoiro_fixtures(team_name: str) -> list[dict]:
-    """Return WC fixture rows involving this national team."""
+    """Return WC 2026 fixture rows involving this national team (no historical WCs)."""
     return [
         row for row in BZZ_FIXTURES
         if _name_in_team(row.get("home_team", ""), team_name)
         or _name_in_team(row.get("away_team", ""), team_name)
     ]
+
+
+def get_bzzoiro_fixtures_in_range(date_from: str, date_to: str) -> list[dict]:
+    """Return WC 2026 fixtures with kickoff date in [date_from, date_to] (YYYY-MM-DD)."""
+    return [
+        row for row in BZZ_FIXTURES
+        if date_from <= _fixture_date_key(row) <= date_to
+    ]
+
+
+def get_bzzoiro_prediction_for_event(event_id: str | int) -> dict | None:
+    """Return ML prediction row for a fixture event_id, if exported."""
+    return BZZ_PREDICTIONS_BY_EVENT.get(str(event_id))
